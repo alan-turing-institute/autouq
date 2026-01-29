@@ -1,5 +1,8 @@
 # AutoUQ
 
+![CI](https://github.com/alan-turing-institute/autouq/actions/workflows/ci.yaml/badge.svg)
+[![All Contributors](https://img.shields.io/github/all-contributors/alan-turing-institute/autouq?color=ee8449&style=flat-square)](#contributors)
+
 ## Installation
 
 ### Prereqiuisites
@@ -16,4 +19,15 @@ If contributing to the codebase, you can run
 ```bash 
  pre-commit install 
  ```
-This will setup the pre-commit checks so any pushed commits will pass the CI. 
+This will setup the pre-commit checks so any pushed commits will pass the CI.
+
+## Contributors
+
+<!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
+<!-- prettier-ignore-start -->
+<!-- markdownlint-disable -->
+
+<!-- markdownlint-restore -->
+<!-- prettier-ignore-end -->
+
+<!-- ALL-CONTRIBUTORS-LIST:END -->

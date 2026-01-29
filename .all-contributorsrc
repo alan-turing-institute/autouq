@@ -17,6 +17,16 @@
         "ideas",
         "projectManagement"
       ]
+    },
+    {
+      "login": "tobias-liaudat",
+      "name": "Tobías Liaudat",
+      "avatar_url": "https://avatars.githubusercontent.com/u/16106854?v=4",
+      "profile": "https://tobias-liaudat.github.io",
+      "contributions": [
+        "ideas",
+        "code"
+      ]
     }
   ]
 }

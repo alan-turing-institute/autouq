@@ -1,4 +1,22 @@
 {
   "projectName": "autouq",
-  "projectOwner": "alan-turing-institute"
+  "projectOwner": "alan-turing-institute",
+  "files": [
+    "README.md"
+  ],
+  "commitType": "docs",
+  "commitConvention": "angular",
+  "contributorsPerLine": 7,
+  "contributors": [
+    {
+      "login": "jasonmcewen",
+      "name": "Jason McEwen ",
+      "avatar_url": "https://avatars.githubusercontent.com/u/3181701?v=4",
+      "profile": "http://www.jasonmcewen.org",
+      "contributions": [
+        "ideas",
+        "projectManagement"
+      ]
+    }
+  ]
 }

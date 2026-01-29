@@ -30,6 +30,7 @@ This will setup the pre-commit checks so any pushed commits will pass the CI.
   <tbody>
     <tr>
       <td align="center" valign="top" width="14.28%"><a href="http://www.jasonmcewen.org"><img src="https://avatars.githubusercontent.com/u/3181701?v=4?s=100" width="100px;" alt="Jason McEwen "/><br /><sub><b>Jason McEwen </b></sub></a><br /><a href="#ideas-jasonmcewen" title="Ideas, Planning, & Feedback">🤔</a> <a href="#projectManagement-jasonmcewen" title="Project Management">📆</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://tobias-liaudat.github.io"><img src="https://avatars.githubusercontent.com/u/16106854?v=4?s=100" width="100px;" alt="Tobías Liaudat"/><br /><sub><b>Tobías Liaudat</b></sub></a><br /><a href="#ideas-tobias-liaudat" title="Ideas, Planning, & Feedback">🤔</a> <a href="#code-tobias-liaudat" title="Code">💻</a></td>
     </tr>
   </tbody>
 </table>

@@ -11,6 +11,7 @@ dependencies = [
     "beartype>=0.22.8",
     "einops>=0.8.1",
     "jaxtyping>=0.3.3",
+    "numpy>=2.4.6",
     "torch>=2.9.1",
 ]
 
@@ -21,7 +22,7 @@ dev = [
     "pytest-cov>=7.0.0",
     "ruff==0.14.14",
     "pyright==1.1.408",
-    "pre-commit>=4.5.1",
+    "prek>=0.4.2",
 ]
 
 [project.scripts]

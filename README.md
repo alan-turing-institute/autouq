@@ -17,11 +17,22 @@ For development, install with [`uv`](https://github.com/astral-sh/uv):
 uv sync --extra dev
 ```
 
-If contributing to the codebase, you can run 
-```bash 
-prek install 
+If contributing to the codebase, you can run
+```bash
+prek install
 ```
-This will setup the pre-commit checks so any pushed commits will pass the CI.
+This installs the prek hooks so any pushed commits will pass the CI.
+
+The repository recommends the VS Code `ty` extension for editor type
+checking. To switch off `ty` inlay hints personally, add the following
+to your VS Code User Settings:
+
+```json
+{
+  "ty.inlayHints.variableTypes": false,
+  "ty.inlayHints.callArgumentNames": false
+}
+```
 
 ## Contributors
 

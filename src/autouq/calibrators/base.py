@@ -3,7 +3,7 @@ from collections.abc import Callable, Sequence
 
 import torch
 
-from autouq.types import Tensor, TensorBTSIA
+from autouq.types import Tensor, TensorBTSCM, TensorBTSIA
 
 
 # Example Algorithm
@@ -88,3 +88,133 @@ class StandardDeviation(ConformalCalibrator):
 
 class Ensemble(ConformalCalibrator):
     """Ensemble base class."""
+
+
+class SamplableCalibrator(Calibrator, abc.ABC):
+    """Marginal calibrator that also exposes a samplable predictive.
+
+    Extends the :class:`Calibrator` interval contract with :meth:`sample`: a
+    calibrator whose calibrated per-site predictive is a full distribution (not
+    only an interval) can draw an ensemble from it. That ensemble is what a
+    :class:`DependenceCalibrator` reorders. Interval-only calibrators (e.g. the
+    conformal family) do not provide it.
+    """
+
+    @abc.abstractmethod
+    def sample(self, y_pred: Tensor, n_members: int) -> TensorBTSCM:
+        """Draw ``n_members`` samples per site from the calibrated marginals.
+
+        Parameters
+        ----------
+        y_pred
+            Raw forecast to calibrate and sample from, shape ``(B, T, *S, C, M)``.
+        n_members
+            Number of ensemble members to draw.
+
+        Returns
+        -------
+        TensorBTSCM
+            Samples ``(B, T, *S, C, n_members)``, independent across sites.
+        """
+
+
+class DependenceCalibrator(abc.ABC):
+    """Restore cross-site dependence onto calibrated marginal samples.
+
+    Deliberately *not* a :class:`Calibrator`: it has no ``calibrate`` or
+    ``predict`` and cannot produce a calibrated forecast by itself. It is a pure
+    sample-to-sample transform that reorders an ensemble of independently drawn
+    calibrated marginals to follow a dependence template's per-site rank order,
+    so it only runs downstream of a marginal calibrator (see
+    :class:`ComposedCalibrator`).
+    """
+
+    @abc.abstractmethod
+    def apply(self, marginal_samples: Tensor, template: Tensor) -> Tensor:
+        """Reorder ``marginal_samples`` to ``template``'s per-site rank order.
+
+        Parameters
+        ----------
+        marginal_samples
+            Independently drawn calibrated marginals, members on the last axis.
+        template
+            Dependence template of the same shape; only its per-site ranks are
+            used.
+
+        Returns
+        -------
+        Tensor
+            The reordered ensemble: each site's marginal preserved exactly, the
+            template's rank dependence imposed.
+        """
+
+
+class ComposedCalibrator(Calibrator):
+    """A marginal calibrator followed by a dependence restorer.
+
+    The two-phase post-processing pipeline: a :class:`SamplableCalibrator`
+    (e.g. EMOS) calibrates each per-site marginal, then a
+    :class:`DependenceCalibrator` (e.g. ECC) reorders sampled marginals to a
+    template so the ensemble is jointly coherent again. Because the dependence
+    step preserves each marginal exactly, :meth:`predict` is identical to the
+    marginal's -- the joint structure the pipeline adds is visible only through
+    :meth:`sample`.
+
+    Parameters
+    ----------
+    marginal
+        The per-site marginal calibrator (must be samplable).
+    dependence
+        The dependence restorer applied to the sampled marginals. It must
+        treat the last axis as the ensemble members (matching
+        :meth:`SamplableCalibrator.sample`'s output) -- e.g. the default
+        ``ECC()`` with ``member_dim=-1``.
+    """
+
+    def __init__(self, marginal: SamplableCalibrator, dependence: DependenceCalibrator):
+        super().__init__(marginal.spatial_dims)
+        self.marginal = marginal
+        self.dependence = dependence
+
+    def calibrate(self, y_true: Tensor, y_pred: Tensor):
+        """Fit the marginal calibrator; the dependence step is fit-free."""
+        self.marginal.calibrate(y_true, y_pred)
+
+    def predict(self, y_pred: Tensor, alphas: float | Sequence[float]) -> TensorBTSIA:
+        """Per-site intervals, identical to the marginal's (reorder-invariant)."""
+        return self.marginal.predict(y_pred, alphas)
+
+    def sample(
+        self,
+        y_pred: Tensor,
+        n_members: int | None = None,
+        template: Tensor | None = None,
+    ) -> TensorBTSCM:
+        """Draw a jointly coherent ensemble: marginal draws reordered to a template.
+
+        Parameters
+        ----------
+        y_pred
+            Raw forecast, shape ``(B, T, *S, C, M)``.
+        n_members
+            Members to draw; defaults to the template's member count
+            (size-preserving reorder).
+        template
+            Dependence template; defaults to ``y_pred`` itself (ensemble copula
+            coupling onto the raw forecast's dependence).
+
+        Returns
+        -------
+        TensorBTSCM
+            The coherent calibrated ensemble.
+        """
+        tmpl = y_pred if template is None else template
+        n = tmpl.shape[-1] if n_members is None else n_members
+        if n != tmpl.shape[-1]:
+            msg = (
+                f"n_members ({n}) must match the template's member count "
+                f"({tmpl.shape[-1]}); the dependence reorder is size-preserving."
+            )
+            raise ValueError(msg)
+        marginals = self.marginal.sample(y_pred, n)
+        return self.dependence.apply(marginals, tmpl)

@@ -23,6 +23,14 @@ prek install
 ```
 This installs the prek hooks so any pushed commits will pass the CI.
 
+Runtime type checking with `beartype` is disabled by default for package
+imports but enabled by default in tests. To enable it for another
+command, set `RUNTIME_TYPECHECKING=true`:
+
+```bash
+RUNTIME_TYPECHECKING=true uv run python -c "import autouq"
+```
+
 The repository recommends the VS Code `ty` extension for editor type
 checking. To switch off `ty` inlay hints personally, add the following
 to your VS Code User Settings:

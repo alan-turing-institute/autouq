@@ -1,6 +1,5 @@
-from autouq.calibrators.base import Calibrator
-from autouq.calibrators.conformal import (
-    AbsoluteErrorResidual,
+from autouq.calibrators.conformal.absolute_error_residual import AbsoluteErrorResidual
+from autouq.calibrators.conformal.conformal import (
     ConformalCalibrator,
     ConformalizedQuantileRegression,
     Ensemble,
@@ -9,7 +8,6 @@ from autouq.calibrators.conformal import (
 
 __all__ = [
     "AbsoluteErrorResidual",
-    "Calibrator",
     "ConformalCalibrator",
     "ConformalizedQuantileRegression",
     "Ensemble",

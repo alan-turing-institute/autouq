@@ -2,7 +2,7 @@ from collections.abc import Callable, Sequence
 
 import torch
 
-from autouq.calibrators.conformal import ConformalCalibrator
+from autouq.calibrators.conformal.conformal import ConformalCalibrator
 from autouq.types import Tensor, TensorBTSIA
 
 

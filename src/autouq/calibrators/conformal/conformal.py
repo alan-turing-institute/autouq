@@ -9,6 +9,10 @@ from autouq.types import Tensor, TensorBTSIA
 class ConformalCalibrator(Calibrator, abc.ABC):
     """Conformal calibrator base class."""
 
+    def __init__(self, spatial_dims: Sequence[int]):
+        super().__init__(spatial_dims)
+        self.scores: Tensor | None = None
+
     @abc.abstractmethod
     def _score_fn(self) -> Callable: ...
 
@@ -26,7 +30,7 @@ class ConformalCalibrator(Calibrator, abc.ABC):
         self.cache_scores(scores)
 
     def _calibration_scores(self) -> Tensor:
-        if not hasattr(self, "scores"):
+        if self.scores is None:
             msg = "Calibrator must be calibrated before computing q_hat."
             raise RuntimeError(msg)
         return self.scores

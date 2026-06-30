@@ -9,8 +9,14 @@ from autouq.types import Tensor, TensorBTSIA
 class AbsoluteErrorResidual(ConformalCalibrator):
     """Absolute Error Residual base class."""
 
-    def _score_fn(self) -> Callable[[Tensor, Tensor], Tensor]:
-        def absolute_error(y_true: Tensor, y_pred: Tensor) -> Tensor:
+    def _score_fn(
+        self,
+    ) -> Callable[[Tensor, Tensor, Sequence[float] | None], Tensor]:
+        def absolute_error(
+            y_true: Tensor,
+            y_pred: Tensor,
+            _alphas: Sequence[float] | None = None,
+        ) -> Tensor:
             if y_true.shape != y_pred.shape:
                 msg = (
                     "y_true and y_pred must have the same shape; "

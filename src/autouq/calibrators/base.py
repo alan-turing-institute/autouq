@@ -14,7 +14,12 @@ class Calibrator(abc.ABC):
         self.spatial_dims = spatial_dims
 
     @abc.abstractmethod
-    def calibrate(self, y_true: Tensor, y_pred: Tensor): ...
+    def calibrate(
+        self,
+        y_true: Tensor,
+        y_pred: Tensor,
+        alphas: float | Sequence[float] | None = None,
+    ): ...
 
     # TODO: what should we have for predict here?
     def predict(self, y_pred: Tensor, alphas: float | Sequence[float]) -> Tensor:  # noqa: ARG002

@@ -38,7 +38,7 @@ def test_calibrate_caches_absolute_error_scores(calibrator):
         ]
     )
 
-    calibrator.calibrate(y_true, y_pred)
+    calibrator.calibrate(y_true, y_pred, alphas=[0.4, 0.2])
 
     expected_scores = torch.tensor(
         [
@@ -47,6 +47,15 @@ def test_calibrate_caches_absolute_error_scores(calibrator):
         ]
     )
     torch.testing.assert_close(calibrator.scores, expected_scores)
+
+
+def test_calibrate_validates_optional_alpha_levels(calibrator):
+    with pytest.raises(ValueError, match="between 0 and 1"):
+        calibrator.calibrate(
+            torch.ones(2, 2, 1, 1),
+            torch.ones(2, 2, 1, 1),
+            alphas=0.0,
+        )
 
 
 def test_q_hat_uses_finite_sample_order_statistic_per_cell(calibrator):

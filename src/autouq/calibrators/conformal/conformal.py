@@ -14,7 +14,9 @@ class ConformalCalibrator(Calibrator, abc.ABC):
         self.scores: Tensor | None = None
 
     @abc.abstractmethod
-    def _score_fn(self) -> Callable: ...
+    def _score_fn(
+        self,
+    ) -> Callable[[Tensor, Tensor, Sequence[float] | None], Tensor]: ...
 
     def cache_scores(self, scores: Tensor):
         if scores.ndim == 0:
@@ -25,9 +27,39 @@ class ConformalCalibrator(Calibrator, abc.ABC):
             raise ValueError(msg)
         self.scores = scores
 
-    def calibrate(self, y_true: Tensor, y_pred: Tensor):
-        scores = self._score_fn()(y_true, y_pred)
+    def _normalize_alphas(self, alphas: float | Sequence[float]) -> list[float]:
+        if isinstance(alphas, float):
+            alpha_values = [float(alphas)]
+        elif isinstance(alphas, int):
+            msg = "alpha must be a float or a sequence of floats."
+            raise TypeError(msg)
+        else:
+            alpha_values = [float(alpha) for alpha in alphas]
+
+        if not alpha_values:
+            msg = "At least one alpha is required."
+            raise ValueError(msg)
+        for alpha in alpha_values:
+            self._validate_alpha(alpha)
+        return alpha_values
+
+    def _calibrate(
+        self,
+        y_true: Tensor,
+        y_pred: Tensor,
+        alphas: Sequence[float] | None,
+    ):
+        scores = self._score_fn()(y_true, y_pred, alphas)
         self.cache_scores(scores)
+
+    def calibrate(
+        self,
+        y_true: Tensor,
+        y_pred: Tensor,
+        alphas: float | Sequence[float] | None = None,
+    ):
+        alpha_values = None if alphas is None else self._normalize_alphas(alphas)
+        self._calibrate(y_true, y_pred, alpha_values)
 
     def _calibration_scores(self) -> Tensor:
         if self.scores is None:
@@ -35,10 +67,13 @@ class ConformalCalibrator(Calibrator, abc.ABC):
             raise RuntimeError(msg)
         return self.scores
 
-    def q_hat(self, alpha: float) -> Tensor:
+    def _validate_alpha(self, alpha: float):
         if not 0 < alpha < 1:
             msg = f"alpha must be between 0 and 1, got {alpha}."
             raise ValueError(msg)
+
+    def q_hat(self, alpha: float) -> Tensor:
+        self._validate_alpha(alpha)
 
         scores = self._calibration_scores()
         n_calibration = scores.shape[0]
@@ -56,17 +91,7 @@ class ConformalCalibrator(Calibrator, abc.ABC):
     def _predict(self, y_pred: Tensor, alphas: Sequence[float]) -> TensorBTSIA: ...
 
     def predict(self, y_pred: Tensor, alphas: float | Sequence[float]) -> TensorBTSIA:
-        if isinstance(alphas, float):
-            alpha_values = [float(alphas)]
-        elif isinstance(alphas, int):
-            msg = "alpha must be a float or a sequence of floats."
-            raise TypeError(msg)
-        else:
-            alpha_values = [float(alpha) for alpha in alphas]
-
-        if not alpha_values:
-            msg = "At least one alpha is required."
-            raise ValueError(msg)
+        alpha_values = self._normalize_alphas(alphas)
         # TODO: consider time dimension regarding the exchangeability assumption
         # should time be in batch dim ?
         # (see 2.4: https://arxiv.org/abs/2408.09881)

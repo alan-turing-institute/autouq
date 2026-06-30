@@ -8,11 +8,14 @@ from autouq.calibrators.base import (
     SamplableCalibrator,
 )
 from autouq.calibrators.ecc import ECC
-from autouq.calibrators.emos import EMOS
+from autouq.calibrators.emos import EMOS, EMOSECC
+from autouq.calibrators.grouping import AxisRole
 
 __all__ = [
     "ECC",
     "EMOS",
+    "EMOSECC",
+    "AxisRole",
     "Calibrator",
     "ComposedCalibrator",
     "ConformalCalibrator",

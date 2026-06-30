@@ -101,7 +101,13 @@ class SamplableCalibrator(Calibrator, abc.ABC):
     """
 
     @abc.abstractmethod
-    def sample(self, y_pred: Tensor, n_members: int) -> TensorBTSCM:
+    def sample(
+        self,
+        y_pred: Tensor,
+        n_members: int,
+        *,
+        generator: torch.Generator | None = None,
+    ) -> TensorBTSCM:
         """Draw ``n_members`` samples per site from the calibrated marginals.
 
         Parameters
@@ -110,6 +116,9 @@ class SamplableCalibrator(Calibrator, abc.ABC):
             Raw forecast to calibrate and sample from, shape ``(B, T, *S, C, M)``.
         n_members
             Number of ensemble members to draw.
+        generator
+            Optional :class:`torch.Generator` for reproducible draws; ``None``
+            uses the global RNG.
 
         Returns
         -------
@@ -189,6 +198,8 @@ class ComposedCalibrator(Calibrator):
         y_pred: Tensor,
         n_members: int | None = None,
         template: Tensor | None = None,
+        *,
+        generator: torch.Generator | None = None,
     ) -> TensorBTSCM:
         """Draw a jointly coherent ensemble: marginal draws reordered to a template.
 
@@ -202,6 +213,8 @@ class ComposedCalibrator(Calibrator):
         template
             Dependence template; defaults to ``y_pred`` itself (ensemble copula
             coupling onto the raw forecast's dependence).
+        generator
+            Optional :class:`torch.Generator` for reproducible marginal draws.
 
         Returns
         -------
@@ -216,5 +229,5 @@ class ComposedCalibrator(Calibrator):
                 f"({tmpl.shape[-1]}); the dependence reorder is size-preserving."
             )
             raise ValueError(msg)
-        marginals = self.marginal.sample(y_pred, n)
+        marginals = self.marginal.sample(y_pred, n, generator=generator)
         return self.dependence.apply(marginals, tmpl)

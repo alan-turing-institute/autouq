@@ -11,9 +11,7 @@ same code path as the spatial ring test, applied to the time axis.
 
 import torch
 
-from autouq.calibrators.base import ComposedCalibrator
-from autouq.calibrators.ecc import ECC
-from autouq.calibrators.emos import EMOS
+from autouq.calibrators import EMOSECC
 
 
 def _ar_cov(n_leads, rho):
@@ -63,7 +61,7 @@ def test_emos_ecc_restores_temporal_coherence_only_with_a_correct_template():
     y_cal, y_test = truth(n_cal), truth(n_test)
     yp_cal, yp_test = white_model(n_cal), white_model(n_test)
 
-    composite = ComposedCalibrator(EMOS(spatial_dims=(1,)), ECC())
+    composite = EMOSECC(spatial_dims=(1,))
     composite.calibrate(_to_btsc(y_cal), _to_btscm(yp_cal))
 
     yp_test_b = _to_btscm(yp_test)

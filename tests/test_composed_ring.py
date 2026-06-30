@@ -9,9 +9,7 @@ only when reordered onto a template that carries the true dependence.
 
 import torch
 
-from autouq.calibrators.base import ComposedCalibrator
-from autouq.calibrators.ecc import ECC
-from autouq.calibrators.emos import EMOS
+from autouq.calibrators import EMOSECC
 
 
 def _ring_cov(n_sites, length_scale):
@@ -63,7 +61,7 @@ def test_emos_ecc_restores_collection_coverage_only_with_a_correct_template():
     y_cal, y_test = truth(n_cal), truth(n_test)
     yp_cal, yp_test = diagonal_model(n_cal), diagonal_model(n_test)
 
-    composite = ComposedCalibrator(EMOS(spatial_dims=(n_sites,)), ECC())
+    composite = EMOSECC(spatial_dims=(n_sites,))
     composite.calibrate(_to_btsc(y_cal), _to_btscm(yp_cal))
 
     yp_test_b = _to_btscm(yp_test)

@@ -12,9 +12,7 @@ restores both aggregates to the oracle.
 
 import torch
 
-from autouq.calibrators.base import ComposedCalibrator
-from autouq.calibrators.ecc import ECC
-from autouq.calibrators.emos import EMOS
+from autouq.calibrators import EMOSECC
 
 
 def _ar_cov(n, rho):
@@ -82,7 +80,7 @@ def test_emos_ecc_restores_both_spatial_and_temporal_coverage_jointly():
     y_cal, y_test = truth(n_cal), truth(n_test)
     yp_cal, yp_test = white_model(n_cal), white_model(n_test)
 
-    composite = ComposedCalibrator(EMOS(spatial_dims=(n_sites,)), ECC())
+    composite = EMOSECC(spatial_dims=(n_sites,))
     composite.calibrate(_to_btsc(y_cal), _to_btscm(yp_cal))
 
     yp_b, yt_b = _to_btscm(yp_test), _to_btsc(y_test)

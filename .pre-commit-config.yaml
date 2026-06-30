@@ -12,10 +12,10 @@ repos:
     # Run the formatter.
     - id: ruff-format
       types_or: [ python, pyi ]
-- repo: https://github.com/RobertCraigie/pyright-python
-  rev: v1.1.408
+- repo: https://github.com/astral-sh/ty-pre-commit
+  rev: v0.0.55
   hooks:
-  - id: pyright
+    - id: ty
 - repo: https://github.com/kynan/nbstripout
   rev: 0.9.0
   hooks:

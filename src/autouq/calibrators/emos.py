@@ -133,11 +133,14 @@ class EMOS(SamplableCalibrator):
         s2_s = s2 / scale_v**2
         y_s = (y_true - loc_v) / scale_v
 
-        opts = {"device": xbar.device, "dtype": xbar.dtype, "requires_grad": True}
-        beta0 = torch.zeros(pshape, **opts)
-        beta1 = torch.ones(pshape, **opts)
-        raw_g0 = torch.full(pshape, _inv_softplus(1e-3), **opts)
-        raw_g1 = torch.full(pshape, _inv_softplus(1.0), **opts)
+        def _leaf(t: Tensor) -> Tensor:
+            """Return a grad-tracking leaf parameter on the working device/dtype."""
+            return t.to(device=xbar.device, dtype=xbar.dtype).requires_grad_(True)
+
+        beta0 = _leaf(torch.zeros(pshape))
+        beta1 = _leaf(torch.ones(pshape))
+        raw_g0 = _leaf(torch.full(pshape, _inv_softplus(1e-3)))
+        raw_g1 = _leaf(torch.full(pshape, _inv_softplus(1.0)))
         params = [beta0, beta1, raw_g0, raw_g1]
         optimizer = torch.optim.LBFGS(
             params, lr=self.lr, max_iter=self.max_iter, line_search_fn="strong_wolfe"

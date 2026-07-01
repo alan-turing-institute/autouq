@@ -11,12 +11,23 @@ class _EnsembleMode(StrEnum):
     QUANTILE = "quantile"
     STD = "std"
 
-
 class Ensemble(ConformalCalibrator[TensorBNCM, TensorBNC, TensorNC]):
-    """Conformal predictor for ensemble forecasts.
+    """Conformal calibrator for ensemble forecasts.
 
-    ``pred`` is shaped ``(..., M)`` with the final dimension indexing ensemble
-    members.
+    The final ``pred`` dimension indexes ensemble members. ``mode="quantile"``
+    conformalizes an empirical ensemble quantile interval, while ``mode="std"``
+    calibrates normalized residuals around the ensemble mean.
+
+    Args:
+        temporal_dim: Optional index of the temporal dimension in tensors passed
+            to the calibrator.
+        spatial_dims: Optional indices of spatial dimensions in tensors passed
+            to the calibrator.
+        mode: Ensemble interval construction mode. Supported values are
+            ``"quantile"`` and ``"std"``.
+        ensemble_alpha: Miscoverage level used for the empirical ensemble
+            quantile interval in ``"quantile"`` mode.
+        min_scale: Minimum scale used to stabilize ``"std"`` mode.
     """
 
     def __init__(

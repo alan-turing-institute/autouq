@@ -15,7 +15,6 @@ from autouq.types import (
     TensorNCA,
 )
 
-
 class ConformalizedQuantileRegression(
     ConformalCalibrator[
         TensorBNCQ | TensorBNCQA,
@@ -23,10 +22,31 @@ class ConformalizedQuantileRegression(
         TensorNC | TensorNCA,
     ]
 ):
-    """Conformalized Quantile Regression.
+    r"""Conformalized quantile regression calibrator.
 
-    ``pred`` is shaped ``(..., 2)`` for one configured alpha or
-    ``(..., 2, A)`` for multiple configured alphas.
+    Calibration scores are computed cell-wise from lower and upper quantile
+    predictions:
+
+    .. math::
+
+        s_i = \max(\hat{q}_{\mathrm{lo}}(x_i) - y_i,
+        y_i - \hat{q}_{\mathrm{hi}}(x_i)).
+
+    Prediction intervals expand the quantile pair by the conformal score
+    threshold:
+
+    .. math::
+
+        [\hat{q}_{\mathrm{lo}}(x) - \hat{s}_{1-\alpha},
+        \hat{q}_{\mathrm{hi}}(x) + \hat{s}_{1-\alpha}].
+
+    Args:
+        alphas: Miscoverage levels corresponding to the quantile pairs in
+            ``pred``.
+        temporal_dim: Optional index of the temporal dimension in tensors passed
+            to the calibrator.
+        spatial_dims: Optional indices of spatial dimensions in tensors passed
+            to the calibrator.
     """
 
     def __init__(

@@ -1,6 +1,6 @@
 import abc
 import math
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 
 from autouq.calibrators.base import Calibrator
 from autouq.types import Tensor, TensorBTSIA
@@ -14,9 +14,12 @@ class ConformalCalibrator(Calibrator, abc.ABC):
         self.scores: Tensor | None = None
 
     @abc.abstractmethod
-    def _score_fn(
+    def _score(
         self,
-    ) -> Callable[[Tensor, Tensor, Sequence[float] | None], Tensor]: ...
+        y_true: Tensor,
+        y_pred: Tensor,
+        alphas: Sequence[float] | None = None,
+    ) -> Tensor: ...
 
     def cache_scores(self, scores: Tensor):
         if scores.ndim == 0:
@@ -49,7 +52,7 @@ class ConformalCalibrator(Calibrator, abc.ABC):
         y_pred: Tensor,
         alphas: Sequence[float] | None,
     ):
-        scores = self._score_fn()(y_true, y_pred, alphas)
+        scores = self._score(y_true, y_pred, alphas)
         self.cache_scores(scores)
 
     def calibrate(

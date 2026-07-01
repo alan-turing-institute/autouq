@@ -1,4 +1,4 @@
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 
 import torch
 
@@ -9,23 +9,20 @@ from autouq.types import Tensor, TensorBTSIA
 class AbsoluteErrorResidual(ConformalCalibrator):
     """Absolute Error Residual base class."""
 
-    def _score_fn(
+    def _score(
         self,
-    ) -> Callable[[Tensor, Tensor, Sequence[float] | None], Tensor]:
-        def absolute_error(
-            y_true: Tensor,
-            y_pred: Tensor,
-            _alphas: Sequence[float] | None = None,
-        ) -> Tensor:
-            if y_true.shape != y_pred.shape:
-                msg = (
-                    "y_true and y_pred must have the same shape; "
-                    f"got {tuple(y_true.shape)} and {tuple(y_pred.shape)}."
-                )
-                raise ValueError(msg)
-            return torch.abs(y_true - y_pred)
-
-        return absolute_error
+        y_true: Tensor,
+        y_pred: Tensor,
+        alphas: Sequence[float] | None = None,
+    ) -> Tensor:
+        del alphas
+        if y_true.shape != y_pred.shape:
+            msg = (
+                "y_true and y_pred must have the same shape; "
+                f"got {tuple(y_true.shape)} and {tuple(y_pred.shape)}."
+            )
+            raise ValueError(msg)
+        return torch.abs(y_true - y_pred)
 
     def _predict(self, y_pred: Tensor, alphas: Sequence[float]) -> TensorBTSIA:
         scores = self._calibration_scores()

@@ -14,14 +14,9 @@ class ConformalCalibrator(Calibrator, abc.ABC):
         self.scores: Tensor | None = None
 
     @abc.abstractmethod
-    def _score(
-        self,
-        y_true: Tensor,
-        y_pred: Tensor,
-        alphas: Sequence[float] | None = None,
-    ) -> Tensor: ...
+    def _score(self, y_true: Tensor, y_pred: Tensor) -> Tensor: ...
 
-    def cache_scores(self, scores: Tensor):
+    def cache_scores(self, scores: Tensor) -> None:
         if scores.ndim == 0:
             msg = "Calibration scores must include a calibration dimension."
             raise ValueError(msg)
@@ -46,23 +41,8 @@ class ConformalCalibrator(Calibrator, abc.ABC):
             self._validate_alpha(alpha)
         return alpha_values
 
-    def _calibrate(
-        self,
-        y_true: Tensor,
-        y_pred: Tensor,
-        alphas: Sequence[float] | None,
-    ):
-        scores = self._score(y_true, y_pred, alphas)
-        self.cache_scores(scores)
-
-    def calibrate(
-        self,
-        y_true: Tensor,
-        y_pred: Tensor,
-        alphas: float | Sequence[float] | None = None,
-    ):
-        alpha_values = None if alphas is None else self._normalize_alphas(alphas)
-        self._calibrate(y_true, y_pred, alpha_values)
+    def calibrate(self, y_true: Tensor, y_pred: Tensor) -> None:
+        self.cache_scores(self._score(y_true, y_pred))
 
     def _calibration_scores(self) -> Tensor:
         if self.scores is None:
@@ -70,7 +50,7 @@ class ConformalCalibrator(Calibrator, abc.ABC):
             raise RuntimeError(msg)
         return self.scores
 
-    def _validate_alpha(self, alpha: float):
+    def _validate_alpha(self, alpha: float) -> None:
         if not 0 < alpha < 1:
             msg = f"alpha must be between 0 and 1, got {alpha}."
             raise ValueError(msg)

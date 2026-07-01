@@ -13,9 +13,7 @@ class AbsoluteErrorResidual(ConformalCalibrator):
         self,
         y_true: Tensor,
         y_pred: Tensor,
-        alphas: Sequence[float] | None = None,
     ) -> Tensor:
-        del alphas
         if y_true.shape != y_pred.shape:
             msg = (
                 "y_true and y_pred must have the same shape; "

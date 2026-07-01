@@ -45,7 +45,7 @@ TensorBTCHW = Float[Tensor, "batch time channel height width"]  # Specific spati
 
 TensorBTC = Float[Tensor, "batch time channel"]
 
-TensorBTSIA = Float[Tensor, "batch time spatial *spatial channel 2 alphas"]
+TensorBNIA = Float[Tensor, "batch *optional_dims channel 2 alphas"]  # intervals
 
 ArrayLike = Tensor | np.ndarray
 

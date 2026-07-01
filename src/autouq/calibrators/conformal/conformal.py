@@ -1,20 +1,25 @@
 import abc
 import math
 from collections.abc import Sequence
+from typing import Generic
 
-from autouq.calibrators.base import Calibrator
-from autouq.types import Tensor, TensorBTSIA
+from autouq.calibrators.base import Calibrator, PredT
+from autouq.types import Tensor, TensorBNC, TensorBNIA
 
 
-class ConformalCalibrator(Calibrator, abc.ABC):
+class ConformalCalibrator(Calibrator[PredT], Generic[PredT], abc.ABC):
     """Conformal calibrator base class."""
 
-    def __init__(self, spatial_dims: Sequence[int]):
-        super().__init__(spatial_dims)
+    def __init__(
+        self,
+        temporal_dim: int | None = None,
+        spatial_dims: Sequence[int] | None = None,
+    ):
+        super().__init__(temporal_dim=temporal_dim, spatial_dims=spatial_dims)
         self.scores: Tensor | None = None
 
     @abc.abstractmethod
-    def _score(self, y_true: Tensor, y_pred: Tensor) -> Tensor: ...
+    def _score(self, true: TensorBNC, pred: PredT) -> Tensor: ...
 
     def cache_scores(self, scores: Tensor) -> None:
         if scores.ndim == 0:
@@ -41,12 +46,12 @@ class ConformalCalibrator(Calibrator, abc.ABC):
             self._validate_alpha(alpha)
         return alpha_values
 
-    def calibrate(self, y_true: Tensor, y_pred: Tensor) -> None:
-        self.cache_scores(self._score(y_true, y_pred))
+    def calibrate(self, true: TensorBNC, pred: PredT) -> None:
+        self.cache_scores(self._score(true, pred))
 
     def _calibration_scores(self) -> Tensor:
         if self.scores is None:
-            msg = "Calibrator must be calibrated before computing q_hat."
+            msg = "Calibrator must be calibrated before computing the score quantile."
             raise RuntimeError(msg)
         return self.scores
 
@@ -55,7 +60,12 @@ class ConformalCalibrator(Calibrator, abc.ABC):
             msg = f"alpha must be between 0 and 1, got {alpha}."
             raise ValueError(msg)
 
-    def q_hat(self, alpha: float) -> Tensor:
+    def score_quantile(self, alpha: float) -> Tensor:
+        """Return the conformal score threshold.
+
+        This is the finite-sample empirical quantile of calibration scores,
+        often denoted Q_{1-alpha} or q_hat in split conformal prediction.
+        """
         self._validate_alpha(alpha)
 
         scores = self._calibration_scores()
@@ -71,25 +81,25 @@ class ConformalCalibrator(Calibrator, abc.ABC):
         return scores.kthvalue(order, dim=0).values
 
     @abc.abstractmethod
-    def _predict(self, y_pred: Tensor, alphas: Sequence[float]) -> TensorBTSIA: ...
+    def _predict(self, pred: PredT, alphas: Sequence[float]) -> TensorBNIA: ...
 
-    def predict(self, y_pred: Tensor, alphas: float | Sequence[float]) -> TensorBTSIA:
+    def predict(self, pred: PredT, alphas: float | Sequence[float]) -> TensorBNIA:
         alpha_values = self._normalize_alphas(alphas)
         # TODO: consider time dimension regarding the exchangeability assumption
         # should time be in batch dim ?
         # (see 2.4: https://arxiv.org/abs/2408.09881)
         # - e.g. could have helper functions for splitting into chunks
         # - also could have validation methods for checking the assumption
-        return self._predict(y_pred, alpha_values)
+        return self._predict(pred, alpha_values)
 
 
-class ConformalizedQuantileRegression(ConformalCalibrator):
+class ConformalizedQuantileRegression(ConformalCalibrator[Tensor]):
     """Conformalized Quantile Regression base class."""
 
 
-class StandardDeviation(ConformalCalibrator):
+class StandardDeviation(ConformalCalibrator[Tensor]):
     """Standard Deviation base class."""
 
 
-class Ensemble(ConformalCalibrator):
+class Ensemble(ConformalCalibrator[Tensor]):
     """Ensemble base class."""

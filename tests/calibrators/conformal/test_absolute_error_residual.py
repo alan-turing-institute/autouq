@@ -1,3 +1,5 @@
+from math import prod
+
 import pytest
 import torch
 from beartype.roar import BeartypeCallHintParamViolation
@@ -112,66 +114,57 @@ def test_predict_returns_symmetric_intervals_for_each_alpha(
     torch.testing.assert_close(intervals, expected)
 
 
-def test_calibrate_and_predict_end_to_end_on_multicell_data(calibrator):
-    # Shape: (calibration_examples=10, time=3, spatial=2, channels=2).
-    # For each (time, spatial, channel) cell, calibration residuals are
-    # [1, ..., 10] plus that cell's offset. This makes score quantiles explicit:
-    # alpha=0.4 selects 7 + offset, and alpha=0.2 selects 9 + offset.
-    residual_ranks = torch.arange(1.0, 11.0).reshape(10, 1, 1, 1)
-    cell_offsets = torch.arange(12.0).reshape(1, 3, 2, 2)
-    expected_scores = residual_ranks + cell_offsets
-    pred_calibration = torch.full_like(expected_scores, 100.0)
-    true_calibration = pred_calibration + expected_scores
-
-    calibrator.calibrate(true_calibration, pred_calibration)
-
-    torch.testing.assert_close(calibrator.scores, expected_scores)
-
-    score_quantile_alpha_04 = 7.0 + cell_offsets.squeeze(0)
-    score_quantile_alpha_02 = 9.0 + cell_offsets.squeeze(0)
-    torch.testing.assert_close(
-        calibrator.score_quantile(alpha=0.4),
-        score_quantile_alpha_04,
-    )
-    torch.testing.assert_close(
-        calibrator.score_quantile(alpha=0.2),
-        score_quantile_alpha_02,
-    )
-
-    pred_test = torch.arange(24.0).reshape(2, 3, 2, 2) + 200.0
-    intervals = calibrator.predict(pred_test, alphas=[0.4, 0.2])
-
-    expected_intervals = torch.stack(
-        (
-            _interval(pred_test, score_quantile_alpha_04),
-            _interval(pred_test, score_quantile_alpha_02),
+@pytest.mark.parametrize(
+    ("calibrator", "optional_shape", "channels"),
+    [
+        pytest.param(AbsoluteErrorResidual(), (), 2, id="no_optional_dims"),
+        pytest.param(AbsoluteErrorResidual(temporal_dim=1), (2,), 1, id="temporal"),
+        pytest.param(AbsoluteErrorResidual(spatial_dims=(1,)), (2,), 1, id="spatial"),
+        pytest.param(
+            AbsoluteErrorResidual(temporal_dim=1, spatial_dims=(2,)),
+            (3, 2),
+            2,
+            id="temporal_and_spatial",
         ),
-        dim=-1,
+        pytest.param(
+            AbsoluteErrorResidual(temporal_dim=1, spatial_dims=(2, 3)),
+            (2, 2, 3),
+            1,
+            id="temporal_and_two_spatial_dims",
+        ),
+    ],
+)
+def test_calibrate_and_predict_preserves_optional_structure(
+    calibrator,
+    optional_shape,
+    channels,
+):
+    trailing_shape = (*optional_shape, channels)
+    residuals = torch.arange(1.0, 4.0).reshape(3, *([1] * len(trailing_shape)))
+    cell_offsets = torch.arange(prod(trailing_shape), dtype=torch.float32).reshape(
+        1, *trailing_shape
     )
-
-    assert intervals.shape == (2, 3, 2, 2, 2, 2)
-    torch.testing.assert_close(intervals, expected_intervals)
-
-
-def test_calibrate_and_predict_supports_no_optional_dims():
-    calibrator = AbsoluteErrorResidual()
-    true = torch.tensor([[2.0, 5.0], [3.0, 7.0], [4.0, 9.0]])
-    pred = torch.tensor([[1.0, 2.0], [1.0, 5.0], [1.0, 8.0]])
+    pred = torch.full((3, *trailing_shape), 100.0)
+    true = pred + residuals + cell_offsets
 
     calibrator.calibrate(true, pred)
 
-    expected_scores = torch.tensor([[1.0, 3.0], [2.0, 2.0], [3.0, 1.0]])
+    expected_scores = residuals + cell_offsets
     torch.testing.assert_close(calibrator.scores, expected_scores)
+
+    score_quantile = 2.0 + cell_offsets.squeeze(0)
     torch.testing.assert_close(
         calibrator.score_quantile(alpha=0.5),
-        torch.tensor([2.0, 2.0]),
+        score_quantile,
     )
 
-    pred_test = torch.tensor([[10.0, 20.0], [30.0, 40.0]])
+    pred_test = torch.arange(2 * prod(trailing_shape), dtype=torch.float32).reshape(
+        2, *trailing_shape
+    )
     intervals = calibrator.predict(pred_test, alphas=0.5)
-    expected = _interval(pred_test, torch.tensor([2.0, 2.0])).unsqueeze(-1)
+    expected = _interval(pred_test, score_quantile).unsqueeze(-1)
 
-    assert intervals.shape == (2, 2, 2, 1)
+    assert intervals.shape == (2, *trailing_shape, 2, 1)
     torch.testing.assert_close(intervals, expected)
 
 

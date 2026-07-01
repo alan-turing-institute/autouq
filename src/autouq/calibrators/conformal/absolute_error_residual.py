@@ -7,7 +7,27 @@ from autouq.types import Tensor, TensorBNC, TensorBNIA
 
 
 class AbsoluteErrorResidual(ConformalCalibrator[TensorBNC]):
-    """Absolute Error Residual base class."""
+    r"""Split-conformal calibrator using absolute residual scores.
+
+    Calibration scores are computed cell-wise as
+
+    .. math::
+
+        s_i = |y_i - \hat{y}_i|.
+
+    Prediction intervals are symmetric around the point prediction:
+
+    .. math::
+
+        [\hat{y} - \hat{q}_{1-\alpha},
+        \hat{y} + \hat{q}_{1-\alpha}].
+
+    Args:
+        temporal_dim: Optional index of the temporal dimension in tensors passed
+            to the calibrator.
+        spatial_dims: Optional indices of spatial dimensions in tensors passed
+            to the calibrator.
+    """
 
     def _score(
         self,

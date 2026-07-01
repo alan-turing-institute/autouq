@@ -8,7 +8,18 @@ from autouq.types import Tensor, TensorBNC, TensorBNIA
 
 
 class ConformalCalibrator(Calibrator[PredT], Generic[PredT], abc.ABC):
-    """Conformal calibrator base class."""
+    """Base class for split-conformal calibrators.
+
+    Args:
+        temporal_dim: Optional index of the temporal dimension in tensors passed
+            to the calibrator.
+        spatial_dims: Optional indices of spatial dimensions in tensors passed
+            to the calibrator.
+
+    Attributes:
+        scores: Cached calibration scores with the calibration examples on
+            dimension 0.
+    """
 
     def __init__(
         self,
@@ -61,10 +72,22 @@ class ConformalCalibrator(Calibrator[PredT], Generic[PredT], abc.ABC):
             raise ValueError(msg)
 
     def score_quantile(self, alpha: float) -> Tensor:
-        """Return the conformal score threshold.
+        r"""Return the conformal score threshold.
 
         This is the finite-sample empirical quantile of calibration scores,
-        often denoted Q_{1-alpha} or q_hat in split conformal prediction.
+        often denoted :math:`\hat{q}_{1-\alpha}` in split conformal prediction.
+        For :math:`n` calibration examples, this uses the one-indexed order
+        statistic
+
+        .. math::
+
+            k = \lceil (n + 1)(1 - \alpha) \rceil.
+
+        Args:
+            alpha: Miscoverage level in ``(0, 1)``.
+
+        Returns:
+            Score threshold with the calibration dimension removed.
         """
         self._validate_alpha(alpha)
 

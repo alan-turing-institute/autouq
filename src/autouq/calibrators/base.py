@@ -8,7 +8,14 @@ PredT = TypeVar("PredT", bound=Tensor)
 
 
 class Calibrator(Generic[PredT], abc.ABC):
-    """Calibrator base class."""
+    """Base class for prediction calibrators.
+
+    Args:
+        temporal_dim: Optional index of the temporal dimension in tensors passed
+            to the calibrator.
+        spatial_dims: Optional indices of spatial dimensions in tensors passed
+            to the calibrator.
+    """
 
     def __init__(
         self,

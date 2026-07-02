@@ -152,10 +152,16 @@ def group_location_scale(
     return loc, scale
 
 
-def validate_alpha(alpha: float) -> None:
-    """Require a single miscoverage level in the open interval (0, 1)."""
+def validate_alpha(alpha: float, name: str = "alpha") -> None:
+    """Require a single miscoverage level in the open interval (0, 1).
+
+    Args:
+        alpha: The miscoverage level to check.
+        name: Name used in the error message, so callers with a specific
+            parameter (e.g. ``"ensemble_alpha"``) get a pointed message.
+    """
     if not 0.0 < alpha < 1.0:
-        msg = f"alpha must lie in the open interval (0, 1); got {alpha}."
+        msg = f"{name} must lie in the open interval (0, 1); got {alpha}."
         raise ValueError(msg)
 
 

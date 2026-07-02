@@ -103,13 +103,5 @@ class ConformalCalibrator(
         return self._predict(pred, alpha_values)
 
 
-class ConformalizedQuantileRegression(ConformalCalibrator[Tensor, TensorBN, TensorN]):
-    """Conformalized Quantile Regression base class."""
-
-
 class StandardDeviation(ConformalCalibrator[Tensor, TensorBN, TensorN]):
     """Standard Deviation base class."""
-
-
-class Ensemble(ConformalCalibrator[Tensor, TensorBN, TensorN]):
-    """Ensemble base class."""

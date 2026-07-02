@@ -60,6 +60,10 @@ The interval axis has size 2 and stores lower then upper bounds.
 
 - [`AbsoluteErrorResidual`](absolute_error_residual.md) calibrates point
   predictions with absolute residual scores and symmetric intervals.
+- [`ConformalizedQuantileRegression`](conformalized_quantile_regression.md)
+  calibrates lower and upper quantile predictions.
+- [`Ensemble`](ensemble.md) calibrates ensemble predictions using empirical
+  ensemble intervals or normalized residuals.
 
 ## Expectations
 

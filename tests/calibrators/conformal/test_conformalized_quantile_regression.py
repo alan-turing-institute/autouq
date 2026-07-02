@@ -56,18 +56,14 @@ def test_calibrate_caches_cqr_scores(calibrator):
     torch.testing.assert_close(calibrator.scores, expected_scores)
 
 
-def test_predict_returns_conformalized_quantile_intervals(calibrator):
+def test_predict_returns_conformalized_quantile_intervals(
+    calibrator,
+    finite_sample_scores,
+    finite_sample_score_quantiles,
+):
     # For n=4, alpha=0.4 selects the 3rd smallest score. This correction is
     # applied to the lower/upper quantile pair for alpha=0.4.
-    scores = torch.tensor(
-        [
-            [[[1.0]], [[10.0]]],
-            [[[4.0]], [[40.0]]],
-            [[[2.0]], [[20.0]]],
-            [[[3.0]], [[30.0]]],
-        ]
-    )
-    calibrator.cache_scores(scores)
+    calibrator.cache_scores(finite_sample_scores)
 
     lower = torch.tensor(
         [
@@ -80,29 +76,26 @@ def test_predict_returns_conformalized_quantile_intervals(calibrator):
 
     intervals = calibrator.predict(pred, alphas=0.4)
 
-    score_quantile_alpha_04 = torch.tensor([[[3.0]], [[30.0]]])
-    expected = _interval(lower, upper, score_quantile_alpha_04).unsqueeze(-1)
+    expected = _interval(
+        lower,
+        upper,
+        finite_sample_score_quantiles[0.4],
+    ).unsqueeze(-1)
 
     assert intervals.shape == (2, 2, 1, 1, 2, 1)
     torch.testing.assert_close(intervals, expected)
 
 
-def test_multi_alpha_cqr_selects_matching_quantile_pairs_and_scores():
+def test_multi_alpha_cqr_selects_matching_quantile_pairs_and_scores(
+    finite_sample_scores,
+    finite_sample_score_quantiles,
+):
     calibrator = ConformalizedQuantileRegression(
         alphas=[0.4, 0.2],
         temporal_dim=1,
         spatial_dims=(2,),
     )
-    scores_alpha_04 = torch.tensor(
-        [
-            [[[1.0]], [[10.0]]],
-            [[[4.0]], [[40.0]]],
-            [[[2.0]], [[20.0]]],
-            [[[3.0]], [[30.0]]],
-        ]
-    )
-    scores_alpha_02 = scores_alpha_04 + 100.0
-    scores = torch.stack((scores_alpha_04, scores_alpha_02), dim=-1)
+    scores = torch.stack((finite_sample_scores, finite_sample_scores + 100.0), dim=-1)
     calibrator.cache_scores(scores)
 
     lower_alpha_04 = torch.tensor(
@@ -120,12 +113,18 @@ def test_multi_alpha_cqr_selects_matching_quantile_pairs_and_scores():
 
     intervals = calibrator.predict(pred, alphas=[0.4, 0.2])
 
-    score_quantile_alpha_04 = torch.tensor([[[3.0]], [[30.0]]])
-    score_quantile_alpha_02 = torch.tensor([[[104.0]], [[140.0]]])
     expected = torch.stack(
         (
-            _interval(lower_alpha_04, upper_alpha_04, score_quantile_alpha_04),
-            _interval(lower_alpha_02, upper_alpha_02, score_quantile_alpha_02),
+            _interval(
+                lower_alpha_04,
+                upper_alpha_04,
+                finite_sample_score_quantiles[0.4],
+            ),
+            _interval(
+                lower_alpha_02,
+                upper_alpha_02,
+                finite_sample_score_quantiles[0.2] + 100.0,
+            ),
         ),
         dim=-1,
     )

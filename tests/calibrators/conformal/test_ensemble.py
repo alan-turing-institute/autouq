@@ -13,13 +13,24 @@ def _interval(
     return torch.stack((lower - score_quantile, upper + score_quantile), dim=-1)
 
 
-def test_quantile_mode_calibrate_caches_interval_scores():
-    calibrator = Ensemble(
+@pytest.fixture
+def calibrator():
+    # Tests use channels-last tensors with one singleton spatial axis.
+    return Ensemble(
         temporal_dim=1,
         spatial_dims=(2,),
         mode="quantile",
         ensemble_alpha=0.5,
     )
+
+
+@pytest.fixture
+def std_calibrator():
+    # Tests use channels-last tensors with one singleton spatial axis.
+    return Ensemble(temporal_dim=1, spatial_dims=(2,), mode="std")
+
+
+def test_quantile_mode_calibrate_caches_interval_scores(calibrator):
     # Shape: (calibration_examples=2, time=1, spatial=1, channels=1, members=5).
     pred = torch.tensor(
         [
@@ -34,22 +45,12 @@ def test_quantile_mode_calibrate_caches_interval_scores():
     torch.testing.assert_close(calibrator.scores, torch.ones(2, 1, 1, 1) * 5.0)
 
 
-def test_quantile_mode_predicts_conformalized_ensemble_intervals():
-    calibrator = Ensemble(
-        temporal_dim=1,
-        spatial_dims=(2,),
-        mode="quantile",
-        ensemble_alpha=0.5,
-    )
-    scores = torch.tensor(
-        [
-            [[[1.0]], [[10.0]]],
-            [[[4.0]], [[40.0]]],
-            [[[2.0]], [[20.0]]],
-            [[[3.0]], [[30.0]]],
-        ]
-    )
-    calibrator.cache_scores(scores)
+def test_quantile_mode_predicts_conformalized_ensemble_intervals(
+    calibrator,
+    finite_sample_scores,
+    finite_sample_score_quantiles,
+):
+    calibrator.cache_scores(finite_sample_scores)
     base = torch.tensor(
         [
             [[[100.0]], [[200.0]]],
@@ -65,12 +66,10 @@ def test_quantile_mode_predicts_conformalized_ensemble_intervals():
 
     lower = base + 10.0
     upper = base + 30.0
-    score_quantile_alpha_04 = torch.tensor([[[3.0]], [[30.0]]])
-    score_quantile_alpha_02 = torch.tensor([[[4.0]], [[40.0]]])
     expected = torch.stack(
         (
-            _interval(lower, upper, score_quantile_alpha_04),
-            _interval(lower, upper, score_quantile_alpha_02),
+            _interval(lower, upper, finite_sample_score_quantiles[0.4]),
+            _interval(lower, upper, finite_sample_score_quantiles[0.2]),
         ),
         dim=-1,
     )
@@ -79,24 +78,22 @@ def test_quantile_mode_predicts_conformalized_ensemble_intervals():
     torch.testing.assert_close(intervals, expected)
 
 
-def test_std_mode_calibrate_caches_normalized_scores():
-    calibrator = Ensemble(temporal_dim=1, spatial_dims=(2,), mode="std")
+def test_std_mode_calibrate_caches_normalized_scores(std_calibrator):
     pred = torch.tensor(
         [
-            [[[[9.0, 11.0]]]],
-            [[[[19.0, 21.0]]]],
+            [[[[8.0, 12.0]]]],
+            [[[[18.0, 22.0]]]],
         ]
     )
     true = torch.tensor([[[[13.0]]], [[[20.0]]]])
 
-    calibrator.calibrate(true, pred)
+    std_calibrator.calibrate(true, pred)
 
-    expected_scores = torch.tensor([[[[3.0]]], [[[0.0]]]])
-    torch.testing.assert_close(calibrator.scores, expected_scores)
+    expected_scores = torch.tensor([[[[1.5]]], [[[0.0]]]])
+    torch.testing.assert_close(std_calibrator.scores, expected_scores)
 
 
-def test_std_mode_predicts_scaled_conformal_intervals():
-    calibrator = Ensemble(temporal_dim=1, spatial_dims=(2,), mode="std")
+def test_std_mode_predicts_scaled_conformal_intervals(std_calibrator):
     scores = torch.tensor(
         [
             [[[1.0]]],
@@ -105,15 +102,15 @@ def test_std_mode_predicts_scaled_conformal_intervals():
             [[[3.0]]],
         ]
     )
-    calibrator.cache_scores(scores)
-    pred = torch.tensor([[[[[9.0, 11.0]]]], [[[[19.0, 21.0]]]]])
+    std_calibrator.cache_scores(scores)
+    pred = torch.tensor([[[[[8.0, 12.0]]]], [[[[18.0, 22.0]]]]])
 
-    intervals = calibrator.predict(pred, alphas=0.4)
+    intervals = std_calibrator.predict(pred, alphas=0.4)
 
     expected = torch.tensor(
         [
-            [[[[[7.0], [13.0]]]]],
-            [[[[[17.0], [23.0]]]]],
+            [[[[[4.0], [16.0]]]]],
+            [[[[[14.0], [26.0]]]]],
         ]
     )
     assert intervals.shape == (2, 1, 1, 1, 2, 1)
@@ -131,9 +128,7 @@ def test_ensemble_rejects_invalid_configuration():
         Ensemble(temporal_dim=1, spatial_dims=(2,), min_scale=0.0)
 
 
-def test_ensemble_rejects_invalid_prediction_shapes():
-    calibrator = Ensemble(temporal_dim=1, spatial_dims=(2,), mode="quantile")
-
+def test_ensemble_rejects_invalid_prediction_shapes(calibrator):
     with pytest.raises(BeartypeCallHintParamViolation):
         calibrator.calibrate(torch.ones(2, 1, 1, 1), torch.ones(2))
 

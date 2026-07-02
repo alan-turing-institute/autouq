@@ -1,10 +1,8 @@
 """EMOS (nonhomogeneous Gaussian regression) and the composed EMOS+ECC pipeline."""
 
-import math
 from collections.abc import Sequence
 
 import torch
-from torch.distributions import Normal
 from torch.nn.functional import softplus
 
 from autouq.calibrators.base import ComposedCalibrator, SamplableCalibrator
@@ -16,29 +14,10 @@ from autouq.calibrators.grouping import (
     normalize_roles,
     validate_alphas,
 )
+from autouq.calibrators.mathutils import STD_NORMAL, gaussian_crps, inv_softplus
 from autouq.types import Tensor, TensorBNIA, TensorBTSC, TensorBTSCM
 
-_STD_NORMAL = Normal(0.0, 1.0)
-_INV_SQRT_PI = 1.0 / math.sqrt(math.pi)
-_SQRT_2PI = math.sqrt(2.0 * math.pi)
 _VAR_FLOOR = 1e-12
-
-
-def _inv_softplus(x: float) -> float:
-    """Inverse softplus, for initialising a softplus-constrained parameter."""
-    return math.log(math.expm1(x))
-
-
-def _std_normal_pdf(z: Tensor) -> Tensor:
-    """Standard-normal density evaluated elementwise."""
-    return torch.exp(-0.5 * z * z) / _SQRT_2PI
-
-
-def _gaussian_crps(mu: Tensor, sigma: Tensor, y: Tensor) -> Tensor:
-    """Closed-form CRPS of a Gaussian predictive (Gneiting et al., 2005)."""
-    z = (y - mu) / sigma
-    cdf = _STD_NORMAL.cdf(z)
-    return sigma * (z * (2.0 * cdf - 1.0) + 2.0 * _std_normal_pdf(z) - _INV_SQRT_PI)
 
 
 class EMOS(SamplableCalibrator):
@@ -130,8 +109,8 @@ class EMOS(SamplableCalibrator):
 
         beta0 = _leaf(torch.zeros(pshape))
         beta1 = _leaf(torch.ones(pshape))
-        raw_g0 = _leaf(torch.full(pshape, _inv_softplus(1e-3)))
-        raw_g1 = _leaf(torch.full(pshape, _inv_softplus(1.0)))
+        raw_g0 = _leaf(torch.full(pshape, inv_softplus(1e-3)))
+        raw_g1 = _leaf(torch.full(pshape, inv_softplus(1.0)))
         params = [beta0, beta1, raw_g0, raw_g1]
         optimizer = torch.optim.LBFGS(
             params, lr=self.lr, max_iter=self.max_iter, line_search_fn="strong_wolfe"
@@ -142,7 +121,7 @@ class EMOS(SamplableCalibrator):
             mu = beta0.view(view) + beta1.view(view) * xbar_s
             sigma2 = softplus(raw_g0).view(view) + softplus(raw_g1).view(view) * s2_s
             sigma = torch.sqrt(sigma2 + _VAR_FLOOR)
-            loss = _gaussian_crps(mu, sigma, y_s).mean()
+            loss = gaussian_crps(mu, sigma, y_s).mean()
             loss.backward()
             return loss
 
@@ -205,7 +184,7 @@ class EMOS(SamplableCalibrator):
         quantiles = torch.tensor(
             [1.0 - a / 2.0 for a in alphas], device=mu.device, dtype=mu.dtype
         )
-        zs = _STD_NORMAL.icdf(quantiles)  # (n_alphas,)
+        zs = STD_NORMAL.icdf(quantiles)  # (n_alphas,)
         half_width = sigma[..., None] * zs  # (..., n_alphas)
         lower = mu[..., None] - half_width
         upper = mu[..., None] + half_width

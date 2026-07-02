@@ -4,7 +4,7 @@ from enum import StrEnum
 import torch
 
 from autouq.calibrators.conformal.conformal import ConformalCalibrator
-from autouq.types import Tensor, TensorBNC, TensorBNCM, TensorBNIA, TensorNC
+from autouq.types import TensorBNC, TensorBNCM, TensorBNIA, TensorNC
 
 
 class _EnsembleMode(StrEnum):
@@ -109,7 +109,7 @@ class Ensemble(ConformalCalibrator[TensorBNCM, TensorBNC, TensorNC]):
             )
         return torch.stack(intervals, dim=-1)
 
-    def _validate_ensemble_predictions(self, pred: Tensor) -> Tensor:
+    def _validate_ensemble_predictions(self, pred: TensorBNCM) -> TensorBNCM:
         if pred.ndim < 2 or pred.shape[-1] < 2:
             msg = (
                 "Ensemble predictions must include a final ensemble dimension "
@@ -118,14 +118,14 @@ class Ensemble(ConformalCalibrator[TensorBNCM, TensorBNC, TensorNC]):
             raise ValueError(msg)
         return pred
 
-    def _quantile_interval(self, ensemble: Tensor) -> tuple[Tensor, Tensor]:
+    def _quantile_interval(self, ensemble: TensorBNCM) -> tuple[TensorBNC, TensorBNC]:
         lower_q = self.ensemble_alpha / 2
         upper_q = 1 - lower_q
         lower = torch.quantile(ensemble, lower_q, dim=-1)
         upper = torch.quantile(ensemble, upper_q, dim=-1)
         return lower, upper
 
-    def _mean_and_scale(self, ensemble: Tensor) -> tuple[Tensor, Tensor]:
+    def _mean_and_scale(self, ensemble: TensorBNCM) -> tuple[TensorBNC, TensorBNC]:
         center = ensemble.mean(dim=-1)
         scale = ensemble.std(dim=-1, correction=0).clamp_min(self.min_scale)
         return center, scale

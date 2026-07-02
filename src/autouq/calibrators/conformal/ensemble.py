@@ -11,6 +11,7 @@ class _EnsembleMode(StrEnum):
     QUANTILE = "quantile"
     STD = "std"
 
+
 class Ensemble(ConformalCalibrator[TensorBNCM, TensorBNC, TensorNC]):
     """Conformal calibrator for ensemble forecasts.
 

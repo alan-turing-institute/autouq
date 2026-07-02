@@ -54,6 +54,21 @@ The quantile-pair axis has size 2 and stores lower then upper quantiles. In the
 multi-alpha case, the final alpha axis must match the calibrator's configured
 `alphas`.
 
+In base-class terms, this calibrator specializes:
+
+```text
+ConformalCalibrator[
+    TensorBNCQ | TensorBNCQA,
+    TensorBNC | TensorBNCA,
+    TensorNC | TensorNCA,
+]
+```
+
+For one configured alpha, cached scores use `TensorBNC`. For multiple configured
+alphas, cached scores use `TensorBNCA` so each configured alpha has its own
+conformal correction. The public `score_quantile(alpha)` method selects the
+requested alpha and returns a `TensorNC` threshold.
+
 Returned intervals use `TensorBNIA`:
 
 ```text

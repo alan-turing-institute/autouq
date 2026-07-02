@@ -15,6 +15,7 @@ from autouq.types import (
     TensorNCA,
 )
 
+
 class ConformalizedQuantileRegression(
     ConformalCalibrator[
         TensorBNCQ | TensorBNCQA,

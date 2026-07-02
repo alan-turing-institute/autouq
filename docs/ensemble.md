@@ -42,8 +42,18 @@ ensemble standard deviation.
 (batch, *optional_dims, channel, ensemble)
 ```
 
-The final ensemble axis must contain at least two members. Returned intervals use
-`TensorBNIA`:
+The final ensemble axis must contain at least two members.
+
+In base-class terms, this calibrator specializes:
+
+```text
+ConformalCalibrator[TensorBNCM, TensorBNC, TensorNC]
+```
+
+Cached calibration scores use `TensorBNC`, and `score_quantile(alpha)` returns
+a `TensorNC` threshold.
+
+Returned intervals use `TensorBNIA`:
 
 ```text
 (batch, *optional_dims, channel, 2, alphas)

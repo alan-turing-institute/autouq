@@ -56,56 +56,44 @@ def test_calibrate_caches_absolute_error_scores(calibrator):
     torch.testing.assert_close(calibrator.scores, expected_scores)
 
 
-def test_score_quantile_uses_finite_sample_order_statistic_per_cell(calibrator):
+def test_score_quantile_uses_finite_sample_order_statistic_per_cell(
+    calibrator,
+    finite_sample_scores,
+    finite_sample_score_quantiles,
+):
     # Shape: (calibration_examples=4, time=2, spatial=1, channels=1). The score
     # quantile is checked independently for each time/spatial/channel cell. For n=4,
     # alpha=0.4 selects the 3rd smallest score and alpha=0.2 selects the 4th.
-    conformal_scores = torch.tensor(
-        [
-            [[[1.0]], [[10.0]]],
-            [[[4.0]], [[40.0]]],
-            [[[2.0]], [[20.0]]],
-            [[[3.0]], [[30.0]]],
-        ]
-    )
-    calibrator.cache_scores(conformal_scores)
+    calibrator.cache_scores(finite_sample_scores)
 
     torch.testing.assert_close(
         calibrator.score_quantile(alpha=0.4),
-        torch.tensor([[[3.0]], [[30.0]]]),
+        finite_sample_score_quantiles[0.4],
     )
     torch.testing.assert_close(
         calibrator.score_quantile(alpha=0.2),
-        torch.tensor([[[4.0]], [[40.0]]]),
+        finite_sample_score_quantiles[0.2],
     )
 
 
 def test_predict_returns_symmetric_intervals_for_each_alpha(
     calibrator,
     pred,
+    finite_sample_scores,
+    finite_sample_score_quantiles,
 ):
     # Shape: (calibration_examples=4, time=2, spatial=1, channels=1). This
     # mirrors the score quantile pattern, but includes the singleton spatial axis
     # implied by the configured dims. The output interval shape is
     # (batch, optional_dims..., channel, lower_upper, alphas).
-    spatiotemporal_conformal_scores = torch.tensor(
-        [
-            [[[1.0]], [[10.0]]],
-            [[[4.0]], [[40.0]]],
-            [[[2.0]], [[20.0]]],
-            [[[3.0]], [[30.0]]],
-        ]
-    )
-    calibrator.cache_scores(spatiotemporal_conformal_scores)
+    calibrator.cache_scores(finite_sample_scores)
 
     intervals = calibrator.predict(pred, alphas=[0.4, 0.2])
 
-    score_quantile_alpha_04 = torch.tensor([[[3.0]], [[30.0]]])
-    score_quantile_alpha_02 = torch.tensor([[[4.0]], [[40.0]]])
     expected = torch.stack(
         (
-            _interval(pred, score_quantile_alpha_04),
-            _interval(pred, score_quantile_alpha_02),
+            _interval(pred, finite_sample_score_quantiles[0.4]),
+            _interval(pred, finite_sample_score_quantiles[0.2]),
         ),
         dim=-1,
     )

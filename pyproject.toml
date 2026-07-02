@@ -91,5 +91,10 @@ flake8-unused-arguments.ignore-variadic-names = true # allow unused *args/**kwar
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 
+[tool.ruff.lint.isort]
+# tests/toy_problems.py is a local test helper, not a third-party package;
+# keep it in its own import group after the first-party `autouq` imports
+known-local-folder = ["toy_problems"]
+
 [tool.ruff.lint.per-file-ignores]
 "tests/*.py" = ["D"]

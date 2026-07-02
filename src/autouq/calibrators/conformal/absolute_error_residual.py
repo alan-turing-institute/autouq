@@ -3,10 +3,10 @@ from collections.abc import Sequence
 import torch
 
 from autouq.calibrators.conformal.conformal import ConformalCalibrator
-from autouq.types import Tensor, TensorBNC, TensorBNIA
+from autouq.types import TensorBNC, TensorBNIA, TensorNC
 
 
-class AbsoluteErrorResidual(ConformalCalibrator[TensorBNC]):
+class AbsoluteErrorResidual(ConformalCalibrator[TensorBNC, TensorBNC, TensorNC]):
     r"""Split-conformal calibrator using absolute residual scores.
 
     Calibration scores are computed cell-wise as
@@ -33,7 +33,7 @@ class AbsoluteErrorResidual(ConformalCalibrator[TensorBNC]):
         self,
         true: TensorBNC,
         pred: TensorBNC,
-    ) -> Tensor:
+    ) -> TensorBNC:
         if true.shape != pred.shape:
             msg = (
                 "true and pred must have the same shape; "

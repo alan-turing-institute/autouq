@@ -1,13 +1,20 @@
 import abc
 import math
 from collections.abc import Sequence
-from typing import Generic
+from typing import Generic, TypeVar, cast
 
 from autouq.calibrators.base import Calibrator, PredT
-from autouq.types import Tensor, TensorBNC, TensorBNIA
+from autouq.types import Tensor, TensorBN, TensorBNC, TensorBNIA, TensorN
+
+ScoreT = TypeVar("ScoreT", bound=TensorBN)
+ScoreQuantileT = TypeVar("ScoreQuantileT", bound=TensorN)
 
 
-class ConformalCalibrator(Calibrator[PredT], Generic[PredT], abc.ABC):
+class ConformalCalibrator(
+    Calibrator[PredT],
+    Generic[PredT, ScoreT, ScoreQuantileT],
+    abc.ABC,
+):
     """Base class for split-conformal calibrators.
 
     Args:
@@ -27,12 +34,12 @@ class ConformalCalibrator(Calibrator[PredT], Generic[PredT], abc.ABC):
         spatial_dims: Sequence[int] | None = None,
     ):
         super().__init__(temporal_dim=temporal_dim, spatial_dims=spatial_dims)
-        self.scores: Tensor | None = None
+        self.scores: ScoreT | None = None
 
     @abc.abstractmethod
-    def _score(self, true: TensorBNC, pred: PredT) -> Tensor: ...
+    def _score(self, true: TensorBNC, pred: PredT) -> ScoreT: ...
 
-    def cache_scores(self, scores: Tensor) -> None:
+    def cache_scores(self, scores: ScoreT) -> None:
         if scores.ndim == 0:
             msg = "Calibration scores must include a calibration dimension."
             raise ValueError(msg)
@@ -60,7 +67,7 @@ class ConformalCalibrator(Calibrator[PredT], Generic[PredT], abc.ABC):
     def calibrate(self, true: TensorBNC, pred: PredT) -> None:
         self.cache_scores(self._score(true, pred))
 
-    def _calibration_scores(self) -> Tensor:
+    def _calibration_scores(self) -> ScoreT:
         if self.scores is None:
             msg = "Calibrator must be calibrated before computing the score quantile."
             raise RuntimeError(msg)
@@ -71,7 +78,7 @@ class ConformalCalibrator(Calibrator[PredT], Generic[PredT], abc.ABC):
             msg = f"alpha must be between 0 and 1, got {alpha}."
             raise ValueError(msg)
 
-    def score_quantile(self, alpha: float) -> Tensor:
+    def score_quantile(self, alpha: float) -> ScoreQuantileT:
         r"""Return the conformal score threshold.
 
         This is the finite-sample empirical quantile of calibration scores,
@@ -101,7 +108,7 @@ class ConformalCalibrator(Calibrator[PredT], Generic[PredT], abc.ABC):
                 f"samples; use alpha >= {min_alpha:g}."
             )
             raise ValueError(msg)
-        return scores.kthvalue(order, dim=0).values
+        return cast("ScoreQuantileT", scores.kthvalue(order, dim=0).values)
 
     @abc.abstractmethod
     def _predict(self, pred: PredT, alphas: Sequence[float]) -> TensorBNIA: ...
@@ -116,13 +123,13 @@ class ConformalCalibrator(Calibrator[PredT], Generic[PredT], abc.ABC):
         return self._predict(pred, alpha_values)
 
 
-class ConformalizedQuantileRegression(ConformalCalibrator[Tensor]):
+class ConformalizedQuantileRegression(ConformalCalibrator[Tensor, TensorBN, TensorN]):
     """Conformalized Quantile Regression base class."""
 
 
-class StandardDeviation(ConformalCalibrator[Tensor]):
+class StandardDeviation(ConformalCalibrator[Tensor, TensorBN, TensorN]):
     """Standard Deviation base class."""
 
 
-class Ensemble(ConformalCalibrator[Tensor]):
+class Ensemble(ConformalCalibrator[Tensor, TensorBN, TensorN]):
     """Ensemble base class."""

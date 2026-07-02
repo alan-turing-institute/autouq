@@ -39,6 +39,15 @@ cell.
 
 ## Tensor Contract
 
+`AbsoluteErrorResidual` specializes the conformal base as:
+
+```text
+ConformalCalibrator[TensorBNC, TensorBNC, TensorNC]
+```
+
+The first type is the prediction tensor, the second is the cached score tensor,
+and the third is the score-quantile tensor.
+
 `true` and `pred` use the channels-last `TensorBNC` layout:
 
 ```text
@@ -51,6 +60,12 @@ match the calibrated trailing shape:
 
 ```text
 pred.shape[1:] == scores.shape[1:]
+```
+
+The score quantile returned by `score_quantile(alpha)` uses `TensorNC`:
+
+```text
+(*optional_dims, channel)
 ```
 
 The returned intervals use `TensorBNIA`:

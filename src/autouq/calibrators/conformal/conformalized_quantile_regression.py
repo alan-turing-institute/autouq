@@ -5,7 +5,6 @@ import torch
 
 from autouq.calibrators.conformal.conformal import ConformalCalibrator
 from autouq.types import (
-    Tensor,
     TensorBNC,
     TensorBNCA,
     TensorBNCQ,
@@ -116,7 +115,10 @@ class ConformalizedQuantileRegression(
             )
         return torch.stack(intervals, dim=-1)
 
-    def _split_quantile_predictions(self, pred: Tensor) -> tuple[Tensor, Tensor]:
+    def _split_quantile_predictions(
+        self,
+        pred: TensorBNCQ | TensorBNCQA,
+    ) -> tuple[TensorBNC | TensorBNCA, TensorBNC | TensorBNCA]:
         if len(self.alphas) == 1:
             if pred.ndim < 2 or pred.shape[-1] != 2:
                 msg = (
@@ -143,7 +145,11 @@ class ConformalizedQuantileRegression(
             raise ValueError(msg)
         return pred[..., 0, :], pred[..., 1, :]
 
-    def _validate_quantile_order(self, lower: Tensor, upper: Tensor) -> None:
+    def _validate_quantile_order(
+        self,
+        lower: TensorBNC | TensorBNCA,
+        upper: TensorBNC | TensorBNCA,
+    ) -> None:
         if torch.any(lower > upper):
             msg = "Lower quantile predictions must not exceed upper predictions."
             raise ValueError(msg)
@@ -159,10 +165,14 @@ class ConformalizedQuantileRegression(
         )
         raise ValueError(msg)
 
-    def _has_alpha_dimension(self, predictions: Tensor) -> bool:
+    def _has_alpha_dimension(self, predictions: TensorBNC | TensorBNCA) -> bool:
         return len(self.alphas) > 1 and predictions.shape[-1] == len(self.alphas)
 
-    def _select_alpha(self, predictions: Tensor, alpha_idx: int) -> Tensor:
+    def _select_alpha(
+        self,
+        predictions: TensorBNC | TensorBNCA,
+        alpha_idx: int,
+    ) -> TensorBNC:
         if len(self.alphas) == 1:
             return predictions
         return predictions[..., alpha_idx]

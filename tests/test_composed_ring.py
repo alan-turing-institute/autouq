@@ -61,7 +61,7 @@ def test_emos_ecc_restores_collection_coverage_only_with_a_correct_template():
     y_cal, y_test = truth(n_cal), truth(n_test)
     yp_cal, yp_test = diagonal_model(n_cal), diagonal_model(n_test)
 
-    composite = EMOSECC(spatial_dims=(n_sites,))
+    composite = EMOSECC()
     composite.calibrate(_to_btsc(y_cal), _to_btscm(yp_cal))
 
     yp_test_b = _to_btscm(yp_test)

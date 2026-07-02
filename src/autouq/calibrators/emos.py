@@ -11,13 +11,12 @@ from autouq.calibrators.base import ComposedCalibrator, SamplableCalibrator
 from autouq.calibrators.ecc import ECC
 from autouq.calibrators.grouping import (
     AxisRole,
-    broadcast_view,
+    group_layout,
     group_location_scale,
-    group_param_shape,
-    resolve_group_dims,
+    normalize_roles,
     validate_alphas,
 )
-from autouq.types import Tensor, TensorBTSC, TensorBTSCM, TensorBTSIA
+from autouq.types import Tensor, TensorBNIA, TensorBTSC, TensorBTSCM
 
 _STD_NORMAL = Normal(0.0, 1.0)
 _INV_SQRT_PI = 1.0 / math.sqrt(math.pi)
@@ -67,30 +66,31 @@ class EMOS(SamplableCalibrator):
     :class:`SamplableCalibrator` it can also draw an ensemble from the calibrated
     marginals (:meth:`sample`), for composition with a dependence calibrator.
 
-    Parameters
-    ----------
-    spatial_dims
-        Spatial dimension sizes, forwarded to :class:`Calibrator`.
-    per
-        Axis roles that get their own coefficients, as :class:`AxisRole` members
-        or their string values (default ``(AxisRole.TIME,)`` -- one fit per
-        lead). Batch is always pooled.
-    max_iter
-        L-BFGS iterations for the per-group CRPS fit.
-    lr
-        L-BFGS learning rate.
+    Which axes are calibrated is controlled entirely by ``per``; the spatial and
+    channel axis positions are inferred from the forecast's rank at
+    :meth:`calibrate` time under the canonical ``(B, T, *S, C)`` layout, so no
+    axis sizes or indices need to be supplied up front.
+
+    Args:
+        per: Axis roles that get their own coefficients, as :class:`AxisRole`
+            members (bare strings are also accepted and normalised). Default
+            ``(AxisRole.TIME,)`` -- one fit per lead. Use e.g.
+            ``per=(AxisRole.SPACE,)`` to calibrate per site or
+            ``per=(AxisRole.TIME, AxisRole.SPACE)`` for both. Batch is always
+            pooled.
+        max_iter: L-BFGS iterations for the per-group CRPS fit.
+        lr: L-BFGS learning rate.
     """
 
     def __init__(
         self,
-        spatial_dims: Sequence[int],
         *,
         per: Sequence[AxisRole | str] = (AxisRole.TIME,),
         max_iter: int = 100,
         lr: float = 1.0,
     ):
-        super().__init__(spatial_dims)
-        self.per = tuple(per)
+        super().__init__()
+        self.per = normalize_roles(per)
         self.max_iter = max_iter
         self.lr = lr
         self._beta0: Tensor | None = None
@@ -101,37 +101,28 @@ class EMOS(SamplableCalibrator):
         self._scale: Tensor | None = None
 
     @staticmethod
-    def _ensemble_mean_var(y_pred: TensorBTSCM) -> tuple[Tensor, Tensor]:
+    def _ensemble_mean_var(pred: TensorBTSCM) -> tuple[Tensor, Tensor]:
         """Raw ensemble mean and sample variance over the member axis."""
-        n_members = y_pred.shape[-1]
+        n_members = pred.shape[-1]
         if n_members < 2:
             msg = (
                 "EMOS needs an ensemble of at least 2 members to estimate "
                 f"spread; got {n_members} on the last axis."
             )
             raise ValueError(msg)
-        return y_pred.mean(dim=-1), y_pred.var(dim=-1, unbiased=True)
+        return pred.mean(dim=-1), pred.var(dim=-1, unbiased=True)
 
-    def _group_layout(
-        self, working: Tensor
-    ) -> tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]:
-        """Group dims, coefficient shape and broadcast view for ``self.per``."""
-        group_dims = resolve_group_dims(working.ndim, self.per)
-        pshape = group_param_shape(working.shape, group_dims)
-        view = broadcast_view(working.ndim, group_dims, pshape)
-        return group_dims, pshape, view
-
-    def calibrate(self, y_true: TensorBTSC, y_pred: TensorBTSCM):
+    def calibrate(self, true: TensorBTSC, pred: TensorBTSCM) -> None:
         """Fit per-group affine coefficients by minimising mean Gaussian CRPS."""
-        xbar, s2 = self._ensemble_mean_var(y_pred)
-        group_dims, pshape, view = self._group_layout(xbar)
+        xbar, s2 = self._ensemble_mean_var(pred)
+        group_dims, pshape, view = group_layout(xbar.shape, self.per)
 
         # standardise per group so the fit runs on O(1) quantities at any scale
-        loc, scale = group_location_scale(y_true, group_dims)
+        loc, scale = group_location_scale(true, group_dims)
         loc_v, scale_v = loc.view(view), scale.view(view)
         xbar_s = (xbar - loc_v) / scale_v
         s2_s = s2 / scale_v**2
-        y_s = (y_true - loc_v) / scale_v
+        y_s = (true - loc_v) / scale_v
 
         def _leaf(t: Tensor) -> Tensor:
             """Return a grad-tracking leaf parameter on the working device/dtype."""
@@ -171,7 +162,7 @@ class EMOS(SamplableCalibrator):
         self._loc = loc.detach()
         self._scale = scale.detach()
 
-    def _calibrated_mean_std(self, y_pred: TensorBTSCM) -> tuple[Tensor, Tensor]:
+    def _calibrated_mean_std(self, pred: TensorBTSCM) -> tuple[Tensor, Tensor]:
         """Calibrated per-site Gaussian mean and standard deviation."""
         if (
             self._beta0 is None
@@ -183,8 +174,8 @@ class EMOS(SamplableCalibrator):
         ):
             msg = "EMOS.calibrate must be called before predict/sample."
             raise RuntimeError(msg)
-        xbar, s2 = self._ensemble_mean_var(y_pred)
-        _, pshape, view = self._group_layout(xbar)
+        xbar, s2 = self._ensemble_mean_var(pred)
+        _, pshape, view = group_layout(xbar.shape, self.per)
         fitted_shape = tuple(self._beta0.shape)
         if pshape != fitted_shape:
             msg = (
@@ -207,12 +198,10 @@ class EMOS(SamplableCalibrator):
         sigma_s = torch.sqrt(sigma2_s + _VAR_FLOOR)
         return scale * mu_s + loc, scale * sigma_s
 
-    def predict(
-        self, y_pred: TensorBTSCM, alphas: float | Sequence[float]
-    ) -> TensorBTSIA:
+    def predict(self, pred: TensorBTSCM, alphas: float | Sequence[float]) -> TensorBNIA:
         """Central calibrated Gaussian intervals at each miscoverage ``alpha``."""
         alphas = validate_alphas(alphas)
-        mu, sigma = self._calibrated_mean_std(y_pred)
+        mu, sigma = self._calibrated_mean_std(pred)
         quantiles = torch.tensor(
             [1.0 - a / 2.0 for a in alphas], device=mu.device, dtype=mu.dtype
         )
@@ -224,13 +213,13 @@ class EMOS(SamplableCalibrator):
 
     def sample(
         self,
-        y_pred: TensorBTSCM,
+        pred: TensorBTSCM,
         n_members: int,
         *,
         generator: torch.Generator | None = None,
     ) -> TensorBTSCM:
         """Draw ``n_members`` per-site samples from the calibrated marginals."""
-        mu, sigma = self._calibrated_mean_std(y_pred)
+        mu, sigma = self._calibrated_mean_std(pred)
         eps = torch.randn(
             *mu.shape,
             n_members,
@@ -255,25 +244,20 @@ class EMOSECC(ComposedCalibrator):
     ``predict`` for marginal intervals or ``sample`` for a jointly coherent
     ensemble; the two-stage composition is handled internally.
 
-    Parameters
-    ----------
-    spatial_dims
-        Spatial dimension sizes, forwarded to :class:`EMOS`.
-    **emos_kwargs
-        Extra keyword arguments for :class:`EMOS` (e.g. ``per``, ``max_iter``,
-        ``lr``).
+    Args:
+        **emos_kwargs: Keyword arguments for :class:`EMOS` (e.g. ``per``,
+            ``max_iter``, ``lr``).
 
-    Examples
-    --------
-    Construct with the spatial dimension sizes, then use it like any other
-    calibrator -- ``calibrate`` to fit, then ``predict`` or ``sample``::
+    Examples:
+        Construct and use it like any other calibrator -- ``calibrate`` to fit,
+        then ``predict`` or ``sample``::
 
-        model = EMOSECC(spatial_dims=(16,))
-        # y_true: (B, T, *S, C); y_pred: (B, T, *S, C, M)
-        model.calibrate(y_true, y_pred)
-        intervals = model.predict(y_pred, alphas=0.1)  # 90% marginal intervals
-        ensemble = model.sample(y_pred, n_members=32)  # coherent calibrated ensemble
+            model = EMOSECC()  # or EMOSECC(per=(AxisRole.SPACE,)) for per-site
+            # true: (B, T, *S, C); pred: (B, T, *S, C, M)
+            model.calibrate(true, pred)
+            intervals = model.predict(pred, alphas=0.1)  # 90% marginal intervals
+            ensemble = model.sample(pred, n_members=32)  # coherent calibrated ensemble
     """
 
-    def __init__(self, spatial_dims: Sequence[int], **emos_kwargs):
-        super().__init__(EMOS(spatial_dims, **emos_kwargs), ECC())
+    def __init__(self, **emos_kwargs):
+        super().__init__(EMOS(**emos_kwargs), ECC())

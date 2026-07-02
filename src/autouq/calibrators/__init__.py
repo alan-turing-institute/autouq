@@ -1,11 +1,17 @@
-"""Calibrators: marginal, dependence, and composed post-hoc UQ methods."""
+"""Calibrators: marginal, dependence, composed, and conformal post-hoc UQ methods."""
 
 from autouq.calibrators.base import (
     Calibrator,
     ComposedCalibrator,
-    ConformalCalibrator,
     DependenceCalibrator,
     SamplableCalibrator,
+)
+from autouq.calibrators.conformal import (
+    AbsoluteErrorResidual,
+    ConformalCalibrator,
+    ConformalizedQuantileRegression,
+    Ensemble,
+    StandardDeviation,
 )
 from autouq.calibrators.ecc import ECC
 from autouq.calibrators.emos import EMOS, EMOSECC
@@ -15,10 +21,14 @@ __all__ = [
     "ECC",
     "EMOS",
     "EMOSECC",
+    "AbsoluteErrorResidual",
     "AxisRole",
     "Calibrator",
     "ComposedCalibrator",
     "ConformalCalibrator",
+    "ConformalizedQuantileRegression",
     "DependenceCalibrator",
+    "Ensemble",
     "SamplableCalibrator",
+    "StandardDeviation",
 ]

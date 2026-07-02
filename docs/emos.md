@@ -17,10 +17,10 @@ EMOS takes a *raw ensemble forecast* and returns a *calibrated Gaussian
 predictive* at each site. It is pure post-processing — it never touches the
 underlying forecast model.
 
-- **Input.** `calibrate(y_true, y_pred)` where `y_pred` is the raw ensemble of
+- **Input.** `calibrate(true, pred)` where `pred` is the raw ensemble of
   shape `(B, T, *S, C, M)` (batch, time/lead, spatial, channel, members) and
-  `y_true` is the matching observations `(B, T, *S, C)`. `predict` / `sample`
-  then take a fresh `y_pred` of the same forecast shape.
+  `true` is the matching observations `(B, T, *S, C)`. `predict` / `sample`
+  then take a fresh `pred` of the same forecast shape.
 - **What it does.** It collapses the member axis `M` into two per-site summaries
   — the ensemble **mean** `x̄` and **sample variance** `s²` — and fits an affine
   map from those to a Gaussian predictive `N(μ, σ²)`.
@@ -111,7 +111,7 @@ per-lead EMOS.
 ### Per-group standardisation
 
 Before fitting, inputs are standardised per group: the location (mean) and scale
-(floored std) are estimated from `y_true` over the pooled axes
+(floored std) are estimated from `true` over the pooled axes
 (`group_location_scale`), the fit runs on the standardised `O(1)` quantities, and
 the result is de-standardised on output. This is algebraically equivalent to
 fitting on raw values — it only conditions the optimisation so L-BFGS behaves

@@ -7,6 +7,7 @@ axis-grouping, standardisation and validation logic here lets the marginal and
 conformal families share one implementation rather than re-deriving it.
 """
 
+import math
 from collections.abc import Sequence
 from enum import StrEnum
 
@@ -29,39 +30,53 @@ class AxisRole(StrEnum):
     CHANNEL = "channel"
 
 
+def normalize_roles(per: Sequence[AxisRole | str]) -> tuple[AxisRole, ...]:
+    """Convert axis-role names to :class:`AxisRole` members.
+
+    Bare strings are accepted as a ``StrEnum`` convenience, but everything
+    downstream works with the enum members, so normalise at this single boundary
+    and validate eagerly.
+
+    Args:
+        per: Axis roles as :class:`AxisRole` members or their string values.
+
+    Returns:
+        The roles as :class:`AxisRole` members, in the given order.
+    """
+    roles: list[AxisRole] = []
+    for name in per:
+        try:
+            roles.append(AxisRole(name))
+        except ValueError:
+            valid = ", ".join(repr(r.value) for r in AxisRole)
+            msg = f"unknown axis role {name!r}; expected one of {valid}."
+            raise ValueError(msg) from None
+    return tuple(roles)
+
+
 def resolve_group_dims(ndim: int, per: Sequence[AxisRole | str]) -> tuple[int, ...]:
-    """Map axis-role names to dimension indices of a ``(B, T, *S, C)`` tensor.
+    """Map axis roles to dimension indices of a ``(B, T, *S, C)`` tensor.
 
-    Parameters
-    ----------
-    ndim
-        Rank of the working tensor (ensemble members already reduced).
-    per
-        Axis roles that get their own coefficients, as :class:`AxisRole` members
-        or their string values. ``SPACE`` expands to every spatial dimension.
+    Args:
+        ndim: Rank of the working tensor (ensemble members already reduced).
+        per: Axis roles that get their own coefficients, as :class:`AxisRole`
+            members or their string values. ``SPACE`` expands to every spatial
+            dimension.
 
-    Returns
-    -------
-    tuple of int
+    Returns:
         Independent dimension indices, sorted ascending. Batch (axis 0) is never
         included -- it is always pooled.
     """
     # channels-last (B, T, *S, C) convention -- matches the ``TensorBTSC*``
     # aliases in ``autouq.types``.
-    roles = {
+    role_to_dims = {
         AxisRole.TIME: (1,),
         AxisRole.SPACE: tuple(range(2, ndim - 1)),
         AxisRole.CHANNEL: (ndim - 1,),
     }
     dims: list[int] = []
-    for name in per:
-        try:
-            role = AxisRole(name)
-        except ValueError:
-            valid = ", ".join(repr(r.value) for r in AxisRole)
-            msg = f"unknown axis role {name!r}; expected one of {valid}."
-            raise ValueError(msg) from None
-        dims.extend(roles[role])
+    for role in normalize_roles(per):
+        dims.extend(role_to_dims[role])
     return tuple(sorted(set(dims)))
 
 
@@ -88,6 +103,30 @@ def broadcast_view(
     return tuple(view)
 
 
+def group_layout(
+    shape: Sequence[int], per: Sequence[AxisRole | str]
+) -> tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]:
+    """Group dims, coefficient shape and broadcast view for ``per``.
+
+    Bundles :func:`resolve_group_dims`, :func:`group_param_shape` and
+    :func:`broadcast_view` -- the three are always used together to lay
+    per-group coefficients over a working ``(B, T, *S, C)`` tensor.
+
+    Args:
+        shape: Shape of the working tensor (ensemble members already reduced).
+        per: Axis roles that get their own coefficients, as :class:`AxisRole`
+            members or their string values.
+
+    Returns:
+        ``(group_dims, param_shape, broadcast_view)``.
+    """
+    ndim = len(shape)
+    group_dims = resolve_group_dims(ndim, per)
+    param_shape = group_param_shape(shape, group_dims)
+    view = broadcast_view(ndim, group_dims, param_shape)
+    return group_dims, param_shape, view
+
+
 def group_location_scale(
     y: TensorBTSC, group_dims: Sequence[int]
 ) -> tuple[Tensor, Tensor]:
@@ -97,25 +136,46 @@ def group_location_scale(
     structural axes), leaving one statistic per independent-axis combination.
     """
     red = pooled_dims(y.ndim, group_dims)
+    n_pooled = math.prod(y.shape[d] for d in red)
+    if n_pooled < 2:
+        msg = (
+            "could not estimate a per-group scale from `true`; each group needs "
+            f"at least 2 pooled samples but got {n_pooled} "
+            "(check the batch size and `per`)."
+        )
+        raise ValueError(msg)
     loc = y.mean(dim=red)
     scale = y.std(dim=red).clamp_min(_SCALE_FLOOR)
     if not torch.isfinite(scale).all():
-        msg = (
-            "could not estimate a finite per-group scale from y_true; each group "
-            "needs at least 2 pooled samples (check the batch size and `per`)."
-        )
+        msg = "per-group scale is non-finite; check `true` for NaN/inf values."
         raise ValueError(msg)
     return loc, scale
 
 
-def validate_alphas(alphas: float | Sequence[float]) -> list[float]:
-    """Normalise ``alphas`` to a list, requiring each in the open interval (0, 1)."""
-    values = (
-        [float(alphas)]
-        if isinstance(alphas, int | float)
-        else [float(a) for a in alphas]
-    )
-    if any(not 0.0 < a < 1.0 for a in values):
-        msg = f"every alpha must lie in the open interval (0, 1); got {values}."
+def validate_alpha(alpha: float) -> None:
+    """Require a single miscoverage level in the open interval (0, 1)."""
+    if not 0.0 < alpha < 1.0:
+        msg = f"alpha must lie in the open interval (0, 1); got {alpha}."
         raise ValueError(msg)
+
+
+def validate_alphas(alphas: float | Sequence[float]) -> list[float]:
+    """Normalise ``alphas`` to a non-empty list, each in the open interval (0, 1).
+
+    A bare ``int`` is rejected with :class:`TypeError`: a miscoverage level is a
+    float in ``(0, 1)``, so an integer alpha is always a mistake -- ``0`` and
+    ``1`` are excluded and nothing lies strictly between them.
+    """
+    if isinstance(alphas, float):
+        values = [float(alphas)]
+    elif isinstance(alphas, int):
+        msg = "alpha must be a float or a sequence of floats."
+        raise TypeError(msg)
+    else:
+        values = [float(a) for a in alphas]
+    if not values:
+        msg = "at least one alpha is required."
+        raise ValueError(msg)
+    for alpha in values:
+        validate_alpha(alpha)
     return values

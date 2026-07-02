@@ -12,7 +12,9 @@ Tensor = torch.Tensor
 # - S: one or more spatial dims
 # - C: exactly one channel dim
 # - L: one or more latent dims
-# - N: zero or more arbirtrary dims (e.g. NDArray that can be 0 or more dims)
+# - N: zero or more intermediate dims. The jaxtyping name describes the role,
+#   e.g. *optional_dims for prediction/target structure and *score_dims for
+#   generic conformal score structure.
 # - W: exactly one width dim
 # - H: exactly one height dim
 # - D: exactly one depth dim
@@ -22,6 +24,8 @@ Tensor = torch.Tensor
 
 TensorC = Float[Tensor, "channel"]  # Vector of scalars
 TensorBC = Float[Tensor, "batch channel"]  # Only batch and channel
+TensorBN = Float[Tensor, "batch *score_dims"]  # Scores with calibration batch
+TensorN = Float[Tensor, "*score_dims"]  # Scores without calibration batch
 TensorBNC = Float[Tensor, "batch *optional_dims channel"]
 TensorBNCM = Float[Tensor, "batch *optional_dims channel ensemble"]  # ensemble
 TensorBTNC = Float[Tensor, "batch time *optional_dims channel"]
@@ -45,7 +49,7 @@ TensorBTCHW = Float[Tensor, "batch time channel height width"]  # Specific spati
 
 TensorBTC = Float[Tensor, "batch time channel"]
 
-TensorBTSIA = Float[Tensor, "batch time spatial *spatial channel 2 alphas"]
+TensorBNIA = Float[Tensor, "batch *optional_dims channel 2 alphas"]  # intervals
 
 ArrayLike = Tensor | np.ndarray
 

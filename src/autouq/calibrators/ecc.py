@@ -18,11 +18,9 @@ class ECC(DependenceCalibrator):
     historical trajectories (the Schaake shuffle); only its ranks are used. The
     reorder is size-preserving: samples and template must share a member count.
 
-    Parameters
-    ----------
-    member_dim
-        Axis indexing the ensemble members (default last, the ``TensorBTSCM``
-        convention).
+    Args:
+        member_dim: Axis indexing the ensemble members (default last, the
+            ``TensorBTSCM`` convention).
     """
 
     def __init__(self, member_dim: int = -1):

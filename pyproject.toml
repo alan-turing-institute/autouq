@@ -75,8 +75,9 @@ ignore = [
     "ISC001",  # Conflicts with formatter
     # "D417",    # Missing trailing new line in docstring
     "D100",    # Missing docstring in public module
-    "D102",    # Missing docstring in public class, TODO: remove in future
+    "D102",    # Missing docstring in public method, TODO: remove in future
     "D104",    # Missing docstring in public package
+    "D107",    # Missing docstring in __init__ (documented at class level in Google style)
     "PLR0913", # too many arguments
     "RET504",  # Allow assignment to variable before return
 ]
@@ -88,7 +89,7 @@ unfixable = [
 flake8-unused-arguments.ignore-variadic-names = true # allow unused *args/**kwargs
 
 [tool.ruff.lint.pydocstyle]
-convention = "numpy"
+convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*.py" = ["D"]

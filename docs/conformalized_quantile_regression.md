@@ -54,14 +54,22 @@ For multiple quantile pairs, `pred` uses `TensorBNCQK`:
 The lower/upper quantile axis has size 2 and stores lower then upper quantile
 pred tensors. In the multi-pair case, the final `quantile_pairs` axis indexes
 the configured quantile pairs, so it has size `len(quantile_level_pairs)`.
+Lower and upper predicted quantile values may be equal, but lower values must
+not exceed upper values.
 
-For example, configured quantile-level pairs `[(0.05, 0.95), (0.1, 0.9)]` are
-selected at prediction time with miscoverage levels `0.1` and `0.2`,
-respectively. If a quantile model returns a flat raw-quantile axis, arrange
-those pred tensors into lower/upper pairs before passing them to this
-calibrator.
-The `alphas` passed to `predict` must match the alphas derived from these
-quantile pairs.
+Each configured `(lower_level, upper_level)` pair implies a prediction
+miscoverage level:
+
+```text
+alpha = lower_level + (1 - upper_level)
+```
+
+For example, configured quantile-level pairs `[(0.05, 0.95), (0.1, 0.9)]`
+imply alphas `0.1` and `0.2`, respectively. At prediction time, `alphas` must
+be selected from those implied values; they choose which configured quantile
+pairs to return and in what order. If a quantile model returns a flat
+raw-quantile axis, arrange those pred tensors into lower/upper pairs before
+passing them to this calibrator.
 
 In base-class terms, this calibrator specializes:
 

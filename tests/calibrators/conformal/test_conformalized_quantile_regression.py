@@ -182,6 +182,16 @@ def test_calibrate_rejects_crossed_quantiles(calibrator):
         calibrator.calibrate(torch.ones(2, 2, 1, 1), pred)
 
 
+def test_calibrate_allows_equal_quantile_predictions(calibrator):
+    true = torch.ones(2, 2, 1, 1)
+    quantile_pred = torch.ones(2, 2, 1, 1)
+    pred = torch.stack((quantile_pred, quantile_pred), dim=-1)
+
+    calibrator.calibrate(true, pred)
+
+    torch.testing.assert_close(calibrator.scores, torch.zeros_like(true))
+
+
 def test_predict_rejects_uncalibrated_or_mismatched_inputs(calibrator):
     pred = torch.ones(1, 2, 1, 1, 2)
 
@@ -243,6 +253,7 @@ def test_multi_pair_cqr_rejects_axis_larger_than_pair_count():
     [
         pytest.param([], "At least one quantile_level_pair", id="empty"),
         pytest.param([(0.0, 0.8)], "quantile level", id="invalid-level"),
+        pytest.param([(0.2, 0.2)], "ordered as", id="equal-levels"),
         pytest.param([(0.8, 0.2)], "ordered as", id="unordered"),
         pytest.param([(0.2, 0.8), (0.1, 0.7)], "distinct alphas", id="duplicate"),
     ],

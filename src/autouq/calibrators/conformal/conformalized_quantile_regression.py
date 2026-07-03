@@ -58,7 +58,7 @@ class ConformalizedQuantileRegression(
     ):
         super().__init__(temporal_dim=temporal_dim, spatial_dims=spatial_dims)
         self.quantile_level_pairs, self.quantile_pair_alphas = (
-            self._normalize_quantile_level_pairs(quantile_level_pairs)
+            self._validate_quantile_level_pairs(quantile_level_pairs)
         )
 
     def _score(
@@ -78,7 +78,7 @@ class ConformalizedQuantileRegression(
                 f"got {tuple(true.shape)} and expected {tuple(target_shape)}."
             )
             raise ValueError(msg)
-        self._validate_quantile_order(lower_quantile, upper_quantile)
+        self._validate_quantile_pred_order(lower_quantile, upper_quantile)
         if self._has_quantile_pair_dimension(lower_quantile):
             true = true.unsqueeze(-1)
         return torch.maximum(lower_quantile - true, true - upper_quantile)
@@ -104,7 +104,7 @@ class ConformalizedQuantileRegression(
                 f"{tuple(scores.shape[1:])}."
             )
             raise ValueError(msg)
-        self._validate_quantile_order(lower_quantiles, upper_quantiles)
+        self._validate_quantile_pred_order(lower_quantiles, upper_quantiles)
 
         intervals = []
         for alpha in alphas:
@@ -162,7 +162,7 @@ class ConformalizedQuantileRegression(
             raise ValueError(msg)
         return pred[..., 0, :], pred[..., 1, :]
 
-    def _normalize_quantile_level_pairs(
+    def _validate_quantile_level_pairs(
         self,
         quantile_level_pairs: Sequence[tuple[float, float]],
     ) -> tuple[list[tuple[float, float]], list[float]]:
@@ -170,23 +170,14 @@ class ConformalizedQuantileRegression(
             msg = "At least one quantile_level_pair is required."
             raise ValueError(msg)
 
-        normalized_pairs = [
-            (float(lower_level), float(upper_level))
-            for lower_level, upper_level in quantile_level_pairs
-        ]
-        for lower_level, upper_level in normalized_pairs:
+        level_pairs = list(quantile_level_pairs)
+        for lower_level, upper_level in level_pairs:
             self._validate_quantile_level(lower_level)
             self._validate_quantile_level(upper_level)
-            if lower_level >= upper_level:
-                msg = (
-                    "quantile_level_pairs must be ordered as "
-                    f"(lower, upper); got {(lower_level, upper_level)}."
-                )
-                raise ValueError(msg)
+            self._validate_quantile_level_pair_order(lower_level, upper_level)
 
         quantile_pair_alphas = [
-            lower_level + (1 - upper_level)
-            for lower_level, upper_level in normalized_pairs
+            lower_level + (1 - upper_level) for lower_level, upper_level in level_pairs
         ]
         for idx, quantile_pair_alpha in enumerate(quantile_pair_alphas):
             if any(
@@ -200,19 +191,31 @@ class ConformalizedQuantileRegression(
             ):
                 msg = "quantile_level_pairs must define distinct alphas."
                 raise ValueError(msg)
-        return normalized_pairs, quantile_pair_alphas
+        return level_pairs, quantile_pair_alphas
 
     def _validate_quantile_level(self, level: float) -> None:
         if not 0 < level < 1:
             msg = f"quantile level must be between 0 and 1, got {level}."
             raise ValueError(msg)
 
-    def _validate_quantile_order(
+    def _validate_quantile_level_pair_order(
+        self,
+        lower_level: float,
+        upper_level: float,
+    ) -> None:
+        if lower_level >= upper_level:
+            msg = (
+                "quantile_level_pairs must be ordered as "
+                f"(lower, upper); got {(lower_level, upper_level)}."
+            )
+            raise ValueError(msg)
+
+    def _validate_quantile_pred_order(
         self,
         lower_quantile: TensorBNC | TensorBNCK,
         upper_quantile: TensorBNC | TensorBNCK,
     ) -> None:
-        if torch.any(lower_quantile > upper_quantile):
+        if bool(torch.any(lower_quantile > upper_quantile)):
             msg = "Lower quantile pred tensors must not exceed upper pred tensors."
             raise ValueError(msg)
 

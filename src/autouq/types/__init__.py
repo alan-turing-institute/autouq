@@ -21,7 +21,8 @@ Tensor = torch.Tensor
 # - M: exactly one model dim (e.g. for ensembles)
 # - I: Interval dimension (currently set as size 2)
 # - A: Alphas channel for different miscoverage levels
-# - Q: Quantile-pair dimension (currently set as size 2: lower, upper)
+# - Q: Lower/upper quantile axis (currently set as size 2)
+# - K: CQR index over configured quantile-level pairs
 
 TensorC = Float[Tensor, "channel"]  # Vector of scalars
 TensorBC = Float[Tensor, "batch channel"]  # Only batch and channel
@@ -30,6 +31,7 @@ TensorN = Float[Tensor, "*score_dims"]  # Scores without calibration batch
 TensorBNC = Float[Tensor, "batch *optional_dims channel"]
 TensorBNCA = Float[Tensor, "batch *optional_dims channel alphas"]
 TensorBNCM = Float[Tensor, "batch *optional_dims channel ensemble"]  # ensemble
+TensorBNCK = Float[Tensor, "batch *optional_dims channel quantile_pairs"]
 TensorBTNC = Float[Tensor, "batch time *optional_dims channel"]
 TensorBSC = Float[Tensor, "batch spatial *spatial channel"]
 TensorBLC = Float[Tensor, "batch latent *latent channel"]
@@ -37,8 +39,8 @@ TensorBCL = Float[Tensor, "batch channel latent *latent"]
 
 TensorBTSC = Float[Tensor, "batch time spatial *spatial channel"]  # Channels last
 TensorBTSCM = Float[Tensor, "batch time spatial *spatial channel ensemble"]  # ensemble
-TensorBNCQ = Float[Tensor, "batch *optional_dims channel 2"]  # CQR pair
-TensorBNCQA = Float[Tensor, "batch *optional_dims channel 2 alphas"]  # CQR pairs
+TensorBNCQ = Float[Tensor, "batch *optional_dims channel 2"]  # CQR lower/upper pair
+TensorBNCQK = Float[Tensor, "batch *optional_dims channel 2 quantile_pairs"]
 TensorBCTS = Float[Tensor, "batch channel time spatial *spatial"]  # Channels first
 TensorBCS = Float[Tensor, "batch channel spatial *spatial"]  # No time dimension
 TensorBSSC = Float[Tensor, "batch spatial *spatial channel"]  # No time dimension
@@ -46,6 +48,7 @@ TensorBSSC = Float[Tensor, "batch spatial *spatial channel"]  # No time dimensio
 TensorTSC = Float[Tensor, "time spatial *spatial channel"]  # No batch dimension
 TensorNC = Float[Tensor, "*optional_dims channel"]  # No batch dimension
 TensorNCA = Float[Tensor, "*optional_dims channel alphas"]  # No batch dimension
+TensorNCK = Float[Tensor, "*optional_dims channel quantile_pairs"]
 TensorSC = Float[Tensor, "spatial *spatial channel"]  # No batch dimension
 TensorS = Float[Tensor, "spatial *spatial"]  # No batch or channel dimension
 

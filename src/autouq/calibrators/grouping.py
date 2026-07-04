@@ -152,6 +152,18 @@ def group_location_scale(
     return loc, scale
 
 
+def validate_open_unit_interval(value: float, name: str) -> None:
+    """Require ``value`` to lie strictly inside the open interval (0, 1).
+
+    The single home for the shared invariant behind every probability-level
+    parameter (miscoverage alphas, quantile levels, ...); callers pass ``name``
+    so the error message points at their specific parameter.
+    """
+    if not 0.0 < value < 1.0:
+        msg = f"{name} must lie in the open interval (0, 1); got {value}."
+        raise ValueError(msg)
+
+
 def validate_alpha(alpha: float, name: str = "alpha") -> None:
     """Require a single miscoverage level in the open interval (0, 1).
 
@@ -160,9 +172,7 @@ def validate_alpha(alpha: float, name: str = "alpha") -> None:
         name: Name used in the error message, so callers with a specific
             parameter (e.g. ``"ensemble_alpha"``) get a pointed message.
     """
-    if not 0.0 < alpha < 1.0:
-        msg = f"{name} must lie in the open interval (0, 1); got {alpha}."
-        raise ValueError(msg)
+    validate_open_unit_interval(alpha, name)
 
 
 def validate_alphas(alphas: float | Sequence[float]) -> list[float]:

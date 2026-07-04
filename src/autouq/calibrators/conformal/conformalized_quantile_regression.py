@@ -4,6 +4,7 @@ from collections.abc import Sequence
 import torch
 
 from autouq.calibrators.conformal.conformal import ConformalCalibrator
+from autouq.calibrators.grouping import validate_alpha, validate_open_unit_interval
 from autouq.types import (
     TensorBNC,
     TensorBNCK,
@@ -194,9 +195,7 @@ class ConformalizedQuantileRegression(
         return level_pairs, quantile_pair_alphas
 
     def _validate_quantile_level(self, level: float) -> None:
-        if not 0 < level < 1:
-            msg = f"quantile level must be between 0 and 1, got {level}."
-            raise ValueError(msg)
+        validate_open_unit_interval(level, name="quantile level")
 
     def _validate_quantile_level_pair_order(
         self,
@@ -220,7 +219,7 @@ class ConformalizedQuantileRegression(
             raise ValueError(msg)
 
     def _quantile_pair_index(self, alpha: float) -> int:
-        self._validate_alpha(alpha)
+        validate_alpha(alpha)
         for idx, configured_alpha in enumerate(self.quantile_pair_alphas):
             if math.isclose(alpha, configured_alpha, rel_tol=1e-12, abs_tol=1e-12):
                 return idx

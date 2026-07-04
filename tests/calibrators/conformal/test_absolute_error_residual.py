@@ -177,7 +177,7 @@ def test_predict_rejects_uncalibrated_or_mismatched_inputs(calibrator):
 def test_score_quantile_rejects_invalid_alpha(calibrator):
     calibrator.cache_scores(torch.ones(4, 2, 1, 1))
 
-    with pytest.raises(ValueError, match="between 0 and 1"):
+    with pytest.raises(ValueError, match="open interval"):
         calibrator.score_quantile(alpha=0.0)
 
     with pytest.raises(ValueError, match="too small"):

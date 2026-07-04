@@ -4,6 +4,7 @@ from enum import StrEnum
 import torch
 
 from autouq.calibrators.conformal.conformal import ConformalCalibrator
+from autouq.calibrators.grouping import validate_alpha
 from autouq.types import TensorBNC, TensorBNCM, TensorBNIA, TensorNC
 
 
@@ -45,9 +46,7 @@ class Ensemble(ConformalCalibrator[TensorBNCM, TensorBNC, TensorNC]):
         except ValueError as exc:
             msg = f"mode must be 'quantile' or 'std', got {mode!r}."
             raise ValueError(msg) from exc
-        if not 0 < ensemble_alpha < 1:
-            msg = f"ensemble_alpha must be between 0 and 1, got {ensemble_alpha}."
-            raise ValueError(msg)
+        validate_alpha(ensemble_alpha, name="ensemble_alpha")
         if min_scale <= 0:
             msg = f"min_scale must be positive, got {min_scale}."
             raise ValueError(msg)

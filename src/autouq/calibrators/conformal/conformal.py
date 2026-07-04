@@ -4,6 +4,7 @@ from collections.abc import Sequence
 from typing import Generic, TypeVar, cast
 
 from autouq.calibrators.base import Calibrator, PredT
+from autouq.calibrators.grouping import validate_alpha, validate_alphas
 from autouq.types import Tensor, TensorBN, TensorBNC, TensorBNIA, TensorN
 
 ScoreT = TypeVar("ScoreT", bound=TensorBN)
@@ -48,22 +49,6 @@ class ConformalCalibrator(
             raise ValueError(msg)
         self.scores = scores
 
-    def _normalize_alphas(self, alphas: float | Sequence[float]) -> list[float]:
-        if isinstance(alphas, float):
-            alpha_values = [float(alphas)]
-        elif isinstance(alphas, int):
-            msg = "alpha must be a float or a sequence of floats."
-            raise TypeError(msg)
-        else:
-            alpha_values = [float(alpha) for alpha in alphas]
-
-        if not alpha_values:
-            msg = "At least one alpha is required."
-            raise ValueError(msg)
-        for alpha in alpha_values:
-            self._validate_alpha(alpha)
-        return alpha_values
-
     def calibrate(self, true: TensorBNC, pred: PredT) -> None:
         self.cache_scores(self._score(true, pred))
 
@@ -72,11 +57,6 @@ class ConformalCalibrator(
             msg = "Calibrator must be calibrated before computing the score quantile."
             raise RuntimeError(msg)
         return self.scores
-
-    def _validate_alpha(self, alpha: float) -> None:
-        if not 0 < alpha < 1:
-            msg = f"alpha must be between 0 and 1, got {alpha}."
-            raise ValueError(msg)
 
     def score_quantile(self, alpha: float) -> ScoreQuantileT:
         r"""Return the conformal score threshold.
@@ -96,7 +76,7 @@ class ConformalCalibrator(
         Returns:
             Score threshold with the calibration dimension removed.
         """
-        self._validate_alpha(alpha)
+        validate_alpha(alpha)
 
         scores = self._calibration_scores()
         n_calibration = scores.shape[0]
@@ -114,7 +94,7 @@ class ConformalCalibrator(
     def _predict(self, pred: PredT, alphas: Sequence[float]) -> TensorBNIA: ...
 
     def predict(self, pred: PredT, alphas: float | Sequence[float]) -> TensorBNIA:
-        alpha_values = self._normalize_alphas(alphas)
+        alpha_values = validate_alphas(alphas)
         # TODO: consider time dimension regarding the exchangeability assumption
         # should time be in batch dim ?
         # (see 2.4: https://arxiv.org/abs/2408.09881)

@@ -1,4 +1,4 @@
-# AutoUQ
+# AutoUQ <img src="https://raw.githubusercontent.com/alan-turing-institute/autouq/refs/heads/main/AU.png" align="right" height="138" />
 
 ![CI](https://github.com/alan-turing-institute/autouq/actions/workflows/ci.yaml/badge.svg) <!-- ALL-CONTRIBUTORS-BADGE:START - Do not remove or modify this section -->
 [![All Contributors](https://img.shields.io/badge/all_contributors-8-orange.svg?style=flat-square)](#contributors-)

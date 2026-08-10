@@ -92,6 +92,20 @@ def test_predict_returns_alpha_delta_product_with_asymmetric_intervals(
     }
 
 
+def test_smaller_delta_fits_no_smaller_scale():
+    true = torch.linspace(0, 2, 1_000).unsqueeze(-1)
+    pred = _uncertainty_prediction(torch.zeros_like(true))
+    calibrator = ScaledIntervalRCPS(
+        alphas=0.2,
+        deltas=[0.05, 0.2],
+        search_tolerance=1e-6,
+    )
+
+    calibrator.calibrate(true, pred)
+
+    assert calibrator.lambda_hat(0.2, 0.05) >= calibrator.lambda_hat(0.2, 0.2)
+
+
 def test_calibrate_clears_scales_computed_for_previous_data(calibration_data):
     true, pred = calibration_data
     calibrator = ScaledIntervalRCPS(alphas=0.1, deltas=0.05)

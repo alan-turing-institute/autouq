@@ -2,7 +2,7 @@ from typing import Protocol, runtime_checkable
 
 import torch
 
-from autouq.types import Tensor, TensorB, TensorBNC, TensorBNI
+from autouq.types import TensorB, TensorBNC, TensorBNI
 
 
 @runtime_checkable
@@ -13,7 +13,7 @@ class RiskLoss(Protocol):
     calibration example. Loss must be non-increasing as prediction sets grow.
     """
 
-    def __call__(self, prediction_set: Tensor, true: Tensor) -> TensorB:
+    def __call__(self, prediction_set: TensorBNI, true: TensorBNC) -> TensorB:
         """Return one loss for each item on the batch dimension."""
 
 

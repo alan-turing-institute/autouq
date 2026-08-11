@@ -5,10 +5,10 @@ from autouq.types import TensorBNC, TensorBNCU, TensorBNI
 
 
 class ScaledIntervalRCPS(RCPSCalibrator[TensorBNCU]):
-    r"""RCPS for predicted centres and asymmetric uncertainty widths.
+    r"""RCPS for predicted centres and asymmetric uncertainty half-widths.
 
-    The final prediction axis stores centre, lower width, and upper width. The
-    nested interval is
+    The final prediction axis stores centre, lower half-width, and upper
+    half-width. The nested interval is
 
     .. math::
 
@@ -19,7 +19,7 @@ class ScaledIntervalRCPS(RCPSCalibrator[TensorBNCU]):
     def _validate_prediction(pred: TensorBNCU) -> None:
         if pred.ndim < 3 or pred.shape[-1] != 3:
             msg = (
-                "pred must end in centre, lower-width, and upper-width "
+                "pred must end in centre, lower-half-width, and upper-half-width "
                 f"components; got shape {tuple(pred.shape)}."
             )
             raise ValueError(msg)
@@ -27,7 +27,7 @@ class ScaledIntervalRCPS(RCPSCalibrator[TensorBNCU]):
             msg = "pred must contain at least one batch item."
             raise ValueError(msg)
         if (pred[..., 1:] < 0).any():
-            msg = "lower and upper uncertainty widths must be non-negative."
+            msg = "lower and upper uncertainty half-widths must be non-negative."
             raise ValueError(msg)
 
     def _validate_calibration_prediction(

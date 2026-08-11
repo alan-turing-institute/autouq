@@ -23,7 +23,8 @@ Tensor = torch.Tensor
 # - A: Alphas channel for different miscoverage levels
 # - Q: Lower/upper quantile axis (currently set as size 2)
 # - K: CQR index over configured quantile-level pairs
-# - U: RCPS uncertainty components (centre, lower width, upper width; size 3)
+# - U: RCPS scale-family components
+#      (centre, lower half-width, upper half-width; size 3)
 
 TensorB = Float[Tensor, "batch"]
 TensorC = Float[Tensor, "channel"]  # Vector of scalars

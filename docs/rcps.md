@@ -49,10 +49,12 @@ calibrator.calibrate(true_cal, ensemble_cal)
 intervals = calibrator.predict(ensemble_test)
 ```
 
-## Predicted uncertainty widths
+## Predicted uncertainty half-widths
 
 `ScaledIntervalRCPS` accepts `TensorBNCU`, whose final axis stores the predictive
-centre, lower uncertainty width, and upper uncertainty width. It constructs
+centre, lower uncertainty half-width, and upper uncertainty half-width. These
+half-widths are non-negative distances from the centre, not interval endpoints.
+It constructs
 
 $$
 T_\lambda(X) = [f(X)-\lambda l(X), f(X)+\lambda u(X)].

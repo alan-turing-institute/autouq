@@ -60,17 +60,17 @@ class ConformalCalibrator(
     def calibrate(self, true: TensorBNC, pred: PredT) -> None:
         self.cache_scores(self._score(true, pred))
 
-    def reset_calibration(self) -> None:
+    def reset(self) -> None:
         """Clear cached scores and any pending streamed calibration chunks.
 
         Call once before streaming calibration chunks (e.g. one per
         calibration example or per batch of exchangeable examples) via
-        :meth:`update_calibration`.
+        :meth:`update`.
         """
         self.scores = None
         self._pending_score_chunks = []
 
-    def update_calibration(self, true: TensorBNC, pred: PredT) -> None:
+    def update(self, true: TensorBNC, pred: PredT) -> None:
         """Accumulate one calibration chunk's score without concatenating yet.
 
         Chunks are concatenated lazily, once, the next time scores are
@@ -88,10 +88,10 @@ class ConformalCalibrator(
     def accumulate_score(self, score: ScoreT) -> None:
         """Append an already-computed score chunk to the pending calibration bank.
 
-        Complements :meth:`update_calibration`, for calibrators whose
-        subclass-specific streaming API computes a calibration example's
-        score itself (e.g. by streaming ensemble members one at a time)
-        rather than through a single :meth:`_score` call on ``(true, pred)``.
+        Complements :meth:`update`, for calibrators whose subclass-specific
+        streaming API computes a calibration example's score itself (e.g. by
+        streaming ensemble members one at a time) rather than through a
+        single :meth:`_score` call on ``(true, pred)``.
 
         Args:
             score: One calibration chunk's score, matching :meth:`_score`'s

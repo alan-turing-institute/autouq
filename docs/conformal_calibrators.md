@@ -65,18 +65,18 @@ example is already too large to hold many of at once), use the streaming
 counterpart:
 
 ```python
-calibrator.reset_calibration()
+calibrator.reset()
 for true_chunk, pred_chunk in calibration_chunks:
-    calibrator.update_calibration(true_chunk, pred_chunk)
+    calibrator.update(true_chunk, pred_chunk)
 intervals = calibrator.predict(pred_test, alphas=[0.1, 0.2])
 ```
 
 Chunks are concatenated lazily - only once, the first time `score_quantile`
 or `predict` actually needs the full calibration score tensor - so many
 small chunks can be streamed in without ever materializing the full bank
-until it's required. `reset_calibration` clears any cached or pending
-scores; `calibrate`/`cache_scores` still work as before and discard any
-pending streamed chunks when called.
+until it's required. `reset` clears any cached or pending scores;
+`calibrate`/`cache_scores` still work as before and discard any pending
+streamed chunks when called.
 
 Some calibrators (e.g. [`Ensemble`](ensemble.md)) add a further, subclass-specific
 streaming layer for computing one calibration example's score itself, feeding

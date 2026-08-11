@@ -14,9 +14,9 @@ def test_streaming_calibration_matches_single_shot_calibrate(calibrator):
     true = torch.tensor([[1.0], [2.0], [5.0]])
     pred = torch.tensor([[0.0], [0.0], [1.0]])
 
-    calibrator.reset_calibration()
-    calibrator.update_calibration(true[:2], pred[:2])
-    calibrator.update_calibration(true[2:], pred[2:])
+    calibrator.reset()
+    calibrator.update(true[:2], pred[:2])
+    calibrator.update(true[2:], pred[2:])
 
     reference = AbsoluteErrorResidual()
     reference.calibrate(true, pred)
@@ -30,13 +30,13 @@ def test_streaming_calibration_matches_single_shot_calibrate(calibrator):
 
 
 def test_calibration_scores_concatenate_lazily(calibrator):
-    calibrator.reset_calibration()
-    calibrator.update_calibration(torch.tensor([[1.0]]), torch.tensor([[0.0]]))
+    calibrator.reset()
+    calibrator.update(torch.tensor([[1.0]]), torch.tensor([[0.0]]))
 
     # Not materialized until something actually needs it.
     assert calibrator.scores is None
 
-    calibrator.update_calibration(torch.tensor([[4.0]]), torch.tensor([[0.0]]))
+    calibrator.update(torch.tensor([[4.0]]), torch.tensor([[0.0]]))
     torch.testing.assert_close(
         calibrator._calibration_scores(), torch.tensor([[1.0], [4.0]])
     )
@@ -45,9 +45,9 @@ def test_calibration_scores_concatenate_lazily(calibrator):
 
 
 def test_materialized_scores_do_not_retain_duplicate_pending_chunks(calibrator):
-    calibrator.reset_calibration()
-    calibrator.update_calibration(torch.tensor([[1.0]]), torch.tensor([[0.0]]))
-    calibrator.update_calibration(torch.tensor([[4.0]]), torch.tensor([[0.0]]))
+    calibrator.reset()
+    calibrator.update(torch.tensor([[1.0]]), torch.tensor([[0.0]]))
+    calibrator.update(torch.tensor([[4.0]]), torch.tensor([[0.0]]))
 
     calibrator._calibration_scores()
 
@@ -57,9 +57,9 @@ def test_materialized_scores_do_not_retain_duplicate_pending_chunks(calibrator):
 
 
 def test_streaming_can_resume_after_materialization_without_losing_data(calibrator):
-    calibrator.reset_calibration()
-    calibrator.update_calibration(torch.tensor([[1.0]]), torch.tensor([[0.0]]))
-    calibrator.update_calibration(torch.tensor([[4.0]]), torch.tensor([[0.0]]))
+    calibrator.reset()
+    calibrator.update(torch.tensor([[1.0]]), torch.tensor([[0.0]]))
+    calibrator.update(torch.tensor([[4.0]]), torch.tensor([[0.0]]))
 
     # Materialize mid-stream (e.g. an intermediate predict()/score_quantile() call).
     torch.testing.assert_close(
@@ -68,7 +68,7 @@ def test_streaming_can_resume_after_materialization_without_losing_data(calibrat
 
     # Streaming resumes after that - the already-materialized scores must not
     # be dropped.
-    calibrator.update_calibration(torch.tensor([[9.0]]), torch.tensor([[0.0]]))
+    calibrator.update(torch.tensor([[9.0]]), torch.tensor([[0.0]]))
 
     torch.testing.assert_close(
         calibrator._calibration_scores(), torch.tensor([[1.0], [4.0], [9.0]])
@@ -76,7 +76,7 @@ def test_streaming_can_resume_after_materialization_without_losing_data(calibrat
 
 
 def test_accumulate_score_appends_precomputed_chunks(calibrator):
-    calibrator.reset_calibration()
+    calibrator.reset()
     calibrator.accumulate_score(torch.tensor([[1.0], [2.0]]))
     calibrator.accumulate_score(torch.tensor([[4.0]]))
 
@@ -85,26 +85,26 @@ def test_accumulate_score_appends_precomputed_chunks(calibrator):
     )
 
 
-def test_reset_calibration_clears_pending_and_cached_scores(calibrator):
+def test_reset_clears_pending_and_cached_scores(calibrator):
     calibrator.calibrate(torch.tensor([[1.0]]), torch.tensor([[0.0]]))
-    calibrator.reset_calibration()
+    calibrator.reset()
 
     with pytest.raises(RuntimeError, match="must be calibrated"):
         calibrator._calibration_scores()
 
 
 def test_calibrate_after_streaming_overwrites_pending_chunks(calibrator):
-    calibrator.update_calibration(torch.tensor([[1.0]]), torch.tensor([[0.0]]))
+    calibrator.update(torch.tensor([[1.0]]), torch.tensor([[0.0]]))
     calibrator.calibrate(torch.tensor([[9.0]]), torch.tensor([[0.0]]))
 
     torch.testing.assert_close(calibrator._calibration_scores(), torch.tensor([[9.0]]))
 
 
-def test_update_calibration_validates_chunk_shape(calibrator):
+def test_update_validates_chunk_shape(calibrator):
     # A calibration dimension is part of the TensorBNC type hint itself, so a
     # scalar is rejected by beartype before it would reach the manual check.
     with pytest.raises(BeartypeCallHintParamViolation):
-        calibrator.update_calibration(torch.tensor(1.0), torch.tensor(1.0))
+        calibrator.update(torch.tensor(1.0), torch.tensor(1.0))
 
 
 def test_accumulate_score_validates_chunk_shape(calibrator):

@@ -163,16 +163,16 @@ def test_quantile_mode_streaming_calibration_matches_whole_tensor(calibrator):
     )
     reference.calibrate(true, pred)
 
-    calibrator.reset_calibration()
+    calibrator.reset()
     for i in range(true.shape[0]):
         # Keepdim slices (not plain indexing) so each example retains its own
-        # size-1 calibration axis - the axis update_calibration/accumulate_score
-        # concatenate across examples.
+        # size-1 calibration axis - the axis accumulate_score concatenates
+        # across examples.
         example_true, example_pred = true[i : i + 1], pred[i : i + 1]
-        calibrator.reset_online()
+        calibrator.reset_stream()
         for member_idx in range(example_pred.shape[-1]):
-            calibrator.update_online(example_pred[..., member_idx], true=example_true)
-        calibrator.accumulate_score(calibrator.finalize_online())
+            calibrator.update_stream(example_pred[..., member_idx], true=example_true)
+        calibrator.accumulate_score(calibrator.finalize_stream_score())
 
     torch.testing.assert_close(calibrator._calibration_scores(), reference.scores)
     torch.testing.assert_close(
@@ -193,15 +193,15 @@ def test_std_mode_streaming_calibration_matches_whole_tensor(std_calibrator):
     reference = Ensemble(temporal_dim=1, spatial_dims=(2,), mode="std")
     reference.calibrate(true, pred)
 
-    std_calibrator.reset_calibration()
+    std_calibrator.reset()
     for i in range(true.shape[0]):
         example_true, example_pred = true[i : i + 1], pred[i : i + 1]
-        std_calibrator.reset_online()
+        std_calibrator.reset_stream()
         for member_idx in range(example_pred.shape[-1]):
-            std_calibrator.update_online(
+            std_calibrator.update_stream(
                 example_pred[..., member_idx], true=example_true
             )
-        std_calibrator.accumulate_score(std_calibrator.finalize_online())
+        std_calibrator.accumulate_score(std_calibrator.finalize_stream_score())
 
     torch.testing.assert_close(std_calibrator._calibration_scores(), reference.scores)
 
@@ -216,10 +216,10 @@ def test_quantile_mode_streaming_chunked_matches_unchunked():
     reference_score = reference._score(true, pred)
 
     streaming = Ensemble(mode="quantile", ensemble_alpha=0.3)
-    streaming.reset_online()
+    streaming.reset_stream()
     for member_idx in range(n_members):
-        streaming.update_online(pred[..., member_idx], true=true)
-    chunked_score = streaming.finalize_online(chunk_size=3, chunk_dim=-2)
+        streaming.update_stream(pred[..., member_idx], true=true)
+    chunked_score = streaming.finalize_stream_score(chunk_size=3, chunk_dim=-2)
 
     torch.testing.assert_close(chunked_score, reference_score)
 
@@ -234,19 +234,19 @@ def test_std_mode_streaming_is_fully_incremental_via_welford():
     reference_score = reference._score(true, pred)
 
     streaming = Ensemble(mode="std")
-    streaming.reset_online()
+    streaming.reset_stream()
     for member_idx in range(n_members):
-        streaming.update_online(pred[..., member_idx], true=true)
+        streaming.update_stream(pred[..., member_idx], true=true)
         # No members retained at any point - only running Welford accumulators.
         assert (
             not hasattr(streaming, "_online_members") or streaming._online_members == []
         )
-    streaming_score = streaming.finalize_online()
+    streaming_score = streaming.finalize_stream_score()
 
     torch.testing.assert_close(streaming_score, reference_score, atol=1e-5, rtol=1e-5)
 
 
-def test_finalize_online_interval_matches_predict(calibrator, finite_sample_scores):
+def test_finalize_stream_predict_matches_predict(calibrator, finite_sample_scores):
     calibrator.cache_scores(finite_sample_scores)
     base = torch.tensor(
         [
@@ -262,11 +262,11 @@ def test_finalize_online_interval_matches_predict(calibrator, finite_sample_scor
 
     streaming_intervals = []
     for example in ensemble:
-        calibrator.reset_online()
+        calibrator.reset_stream()
         for member_idx in range(example.shape[-1]):
-            calibrator.update_online(example[..., member_idx])
+            calibrator.update_stream(example[..., member_idx])
         streaming_intervals.append(
-            calibrator.finalize_online_interval(alphas=[0.4, 0.2])
+            calibrator.finalize_stream_predict(alphas=[0.4, 0.2])
         )
 
     torch.testing.assert_close(
@@ -275,28 +275,28 @@ def test_finalize_online_interval_matches_predict(calibrator, finite_sample_scor
 
 
 def test_ensemble_online_rejects_too_few_members(calibrator, std_calibrator):
-    calibrator.reset_online()
-    calibrator.update_online(torch.ones(1, 1, 1), true=torch.ones(1, 1, 1))
+    calibrator.reset_stream()
+    calibrator.update_stream(torch.ones(1, 1, 1), true=torch.ones(1, 1, 1))
     with pytest.raises(ValueError, match="at least 2 members"):
-        calibrator.finalize_online()
+        calibrator.finalize_stream_score()
 
-    std_calibrator.reset_online()
-    std_calibrator.update_online(torch.ones(1, 1, 1), true=torch.ones(1, 1, 1))
+    std_calibrator.reset_stream()
+    std_calibrator.update_stream(torch.ones(1, 1, 1), true=torch.ones(1, 1, 1))
     with pytest.raises(ValueError, match="at least 2 members"):
-        std_calibrator.finalize_online()
+        std_calibrator.finalize_stream_score()
 
 
-def test_finalize_online_requires_true(calibrator):
-    calibrator.reset_online()
-    calibrator.update_online(torch.ones(1, 1, 1))
-    calibrator.update_online(torch.ones(1, 1, 1))
+def test_finalize_stream_score_requires_true(calibrator):
+    calibrator.reset_stream()
+    calibrator.update_stream(torch.ones(1, 1, 1))
+    calibrator.update_stream(torch.ones(1, 1, 1))
     with pytest.raises(ValueError, match="requires `true`"):
-        calibrator.finalize_online()
+        calibrator.finalize_stream_score()
 
 
-def test_finalize_online_rejects_invalid_chunk_size(calibrator):
-    calibrator.reset_online()
-    calibrator.update_online(torch.ones(1, 1, 1), true=torch.ones(1, 1, 1))
-    calibrator.update_online(torch.ones(1, 1, 1))
+def test_finalize_stream_score_rejects_invalid_chunk_size(calibrator):
+    calibrator.reset_stream()
+    calibrator.update_stream(torch.ones(1, 1, 1), true=torch.ones(1, 1, 1))
+    calibrator.update_stream(torch.ones(1, 1, 1))
     with pytest.raises(ValueError, match="chunk_size must be a positive integer"):
-        calibrator.finalize_online(chunk_size=0)
+        calibrator.finalize_stream_score(chunk_size=0)

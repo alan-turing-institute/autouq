@@ -178,8 +178,7 @@ suitable bound.
 For $n$ calibration examples, its upper confidence bound is
 
 $$
-\hat R^+(\lambda) = \hat R(\lambda)
-+ \sqrt{\frac{\log(1 / \delta)}{2n}}.
+\widehat{R}^{+}(\lambda) = \widehat{R}(\lambda) + \sqrt{\frac{\log(1 / \delta)}{2n}}.
 $$
 
 The calibrator expands an initial upper scale until the bound is at most

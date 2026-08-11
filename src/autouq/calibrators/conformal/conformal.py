@@ -83,10 +83,7 @@ class ConformalCalibrator(
             true: Calibration target for this chunk.
             pred: Calibration prediction for this chunk.
         """
-        chunk = self._score(true, pred)
-        self._validate_score_chunk(chunk)
-        self._pending_score_chunks.append(chunk)
-        self.scores = None
+        self.accumulate_score(self._score(true, pred))
 
     def accumulate_score(self, score: ScoreT) -> None:
         """Append an already-computed score chunk to the pending calibration bank.

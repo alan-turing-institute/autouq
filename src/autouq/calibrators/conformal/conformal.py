@@ -3,6 +3,8 @@ import math
 from collections.abc import Sequence
 from typing import Generic, TypeVar, cast
 
+import torch
+
 from autouq.calibrators.base import Calibrator, PredT
 from autouq.calibrators.grouping import validate_alpha, validate_alphas
 from autouq.types import Tensor, TensorBN, TensorBNC, TensorBNIA, TensorN
@@ -36,26 +38,81 @@ class ConformalCalibrator(
     ):
         super().__init__(temporal_dim=temporal_dim, spatial_dims=spatial_dims)
         self.scores: ScoreT | None = None
+        self._pending_score_chunks: list[ScoreT] = []
 
     @abc.abstractmethod
     def _score(self, true: TensorBNC, pred: PredT) -> ScoreT: ...
 
-    def cache_scores(self, scores: ScoreT) -> None:
+    @staticmethod
+    def _validate_score_chunk(scores: ScoreT) -> None:
         if scores.ndim == 0:
             msg = "Calibration scores must include a calibration dimension."
             raise ValueError(msg)
         if scores.shape[0] == 0:
             msg = "Calibration scores must contain at least one sample."
             raise ValueError(msg)
+
+    def cache_scores(self, scores: ScoreT) -> None:
+        self._validate_score_chunk(scores)
         self.scores = scores
+        self._pending_score_chunks = []
 
     def calibrate(self, true: TensorBNC, pred: PredT) -> None:
         self.cache_scores(self._score(true, pred))
 
+    def reset_calibration(self) -> None:
+        """Clear cached scores and any pending streamed calibration chunks.
+
+        Call once before streaming calibration chunks (e.g. one per
+        calibration example or per batch of exchangeable examples) via
+        :meth:`update_calibration`.
+        """
+        self.scores = None
+        self._pending_score_chunks = []
+
+    def update_calibration(self, true: TensorBNC, pred: PredT) -> None:
+        """Accumulate one calibration chunk's score without concatenating yet.
+
+        Chunks are concatenated lazily, once, the next time scores are
+        needed (:meth:`score_quantile` or :meth:`predict`), so many small
+        chunks can be streamed in - e.g. one exchangeable calibration example
+        at a time - without ever materializing the full calibration score
+        tensor until it's actually required.
+
+        Args:
+            true: Calibration target for this chunk.
+            pred: Calibration prediction for this chunk.
+        """
+        chunk = self._score(true, pred)
+        self._validate_score_chunk(chunk)
+        self._pending_score_chunks.append(chunk)
+        self.scores = None
+
+    def accumulate_score(self, score: ScoreT) -> None:
+        """Append an already-computed score chunk to the pending calibration bank.
+
+        Complements :meth:`update_calibration`, for calibrators whose
+        subclass-specific streaming API computes a calibration example's
+        score itself (e.g. by streaming ensemble members one at a time)
+        rather than through a single :meth:`_score` call on ``(true, pred)``.
+
+        Args:
+            score: One calibration chunk's score, matching :meth:`_score`'s
+                output shape.
+        """
+        self._validate_score_chunk(score)
+        self._pending_score_chunks.append(score)
+        self.scores = None
+
     def _calibration_scores(self) -> ScoreT:
         if self.scores is None:
-            msg = "Calibrator must be calibrated before computing the score quantile."
-            raise RuntimeError(msg)
+            if not self._pending_score_chunks:
+                msg = (
+                    "Calibrator must be calibrated before computing the score quantile."
+                )
+                raise RuntimeError(msg)
+            chunks = cast("list[Tensor]", self._pending_score_chunks)
+            self.scores = cast("ScoreT", torch.cat(chunks, dim=0))
         return self.scores
 
     def score_quantile(self, alpha: float) -> ScoreQuantileT:

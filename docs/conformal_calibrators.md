@@ -56,6 +56,34 @@ Prediction intervals use the `TensorBNIA` layout:
 
 The interval axis has size 2 and stores lower then upper bounds.
 
+## Streaming Calibration
+
+`calibrate`/`cache_scores` overwrite the cached scores in one shot and need
+the full calibration tensor in memory at once. When calibration examples
+must instead be accumulated one at a time or in small batches (e.g. one
+example is already too large to hold many of at once), use the streaming
+counterpart:
+
+```python
+calibrator.reset_calibration()
+for true_chunk, pred_chunk in calibration_chunks:
+    calibrator.update_calibration(true_chunk, pred_chunk)
+# or, if the score itself was already computed some other way:
+#     calibrator.accumulate_score(score_chunk)
+intervals = calibrator.predict(pred_test, alphas=[0.1, 0.2])
+```
+
+Chunks are concatenated lazily - only once, the first time `score_quantile`
+or `predict` actually needs the full calibration score tensor - so many
+small chunks can be streamed in without ever materializing the full bank
+until it's required. `reset_calibration` clears any cached or pending
+scores; `calibrate`/`cache_scores` still work as before and discard any
+pending streamed chunks when called.
+
+Some calibrators (e.g. [`Ensemble`](ensemble.md)) add a further, subclass-specific
+streaming layer for computing one calibration example's score itself, feeding
+`accumulate_score` in turn - see that calibrator's docs for details.
+
 ## Concrete Calibrators
 
 - [`AbsoluteErrorResidual`](absolute_error_residual.md) calibrates point

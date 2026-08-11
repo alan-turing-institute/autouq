@@ -59,6 +59,48 @@ Returned intervals use `TensorBNIA`:
 (batch, *optional_dims, channel, 2, alphas)
 ```
 
+## Streaming Members
+
+The whole-tensor `calibrate`/`predict` API needs the full `(*, channel,
+ensemble)` tensor for an example in memory at once. When that tensor is too
+large to materialize - e.g. many members over a large spatial grid - stream
+one member at a time instead:
+
+```python
+# One calibration example (e.g. one forecast initialization time):
+calibrator.reset_online()
+for member in members:                      # one model forward pass each
+    calibrator.update_online(member, true=true_for_this_example)
+score = calibrator.finalize_online(chunk_size=2048)   # chunk_size optional
+calibrator.accumulate_score(score)           # feed the base calibration layer
+
+# Repeat reset_online/update_online/finalize_online/accumulate_score for
+# each calibration example, then:
+intervals = calibrator.predict(pred_test, alphas=[0.1, 0.2])
+```
+
+`update_online` accepts one member's prediction, without an ensemble
+dimension (i.e. `TensorBNC`, not `TensorBNCM`). `true` only needs to be
+passed once (e.g. alongside the first member) - it's identical across
+members for a given example.
+
+`finalize_online` returns the score for that one example (the same value
+`calibrate` would compute from the whole tensor), ready to hand to
+`accumulate_score`. For `mode="std"`, this is fully incremental - members are
+never retained, only a running mean and sum-of-squared-deviations (Welford's
+online algorithm) - so the ensemble axis is never materialized regardless of
+`chunk_size`. For `mode="quantile"`, `torch.quantile` still needs every
+member, so members are retained; passing `chunk_size` tiles that quantile
+computation over `chunk_dim` (default: the axis immediately before
+`channel`, typically a spatial axis) so the full retained-member stack is
+combined one chunk at a time instead of all at once.
+
+The same member-streaming machinery has a prediction-time counterpart,
+`finalize_online_interval(alphas, chunk_size=..., chunk_dim=...)`, which
+skips the score computation (no `true` needed) and returns calibrated
+intervals directly for the streamed example - the streaming equivalent of
+`predict` for one example's members.
+
 ## Validity Notes
 
 This class applies split conformal calibration to ensemble-derived intervals or

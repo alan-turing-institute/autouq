@@ -67,15 +67,17 @@ large to materialize - e.g. many members over a large spatial grid - stream
 one member at a time instead:
 
 ```python
-# One calibration example (e.g. one forecast initialization time):
-calibrator.reset_online()
-for member in members:                      # one model forward pass each
-    calibrator.update_online(member, true=true_for_this_example)
-score = calibrator.finalize_online(chunk_size=2048)   # chunk_size optional
-calibrator.accumulate_score(score)           # feed the base calibration layer
+# Outer loop: one iteration per calibration example (e.g. one forecast
+# initialization time). Each example's raw members are only ever held one
+# at a time, and are discarded once that example's score has been folded
+# into the calibration bank via accumulate_score.
+for true_for_this_example, members in calibration_examples:
+    calibrator.reset_online()
+    for member in members:                  # one model forward pass each
+        calibrator.update_online(member, true=true_for_this_example)
+    score = calibrator.finalize_online(chunk_size=2048)   # chunk_size optional
+    calibrator.accumulate_score(score)       # feed the base calibration layer
 
-# Repeat reset_online/update_online/finalize_online/accumulate_score for
-# each calibration example, then:
 intervals = calibrator.predict(pred_test, alphas=[0.1, 0.2])
 ```
 

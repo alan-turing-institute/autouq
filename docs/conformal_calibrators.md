@@ -68,8 +68,6 @@ counterpart:
 calibrator.reset_calibration()
 for true_chunk, pred_chunk in calibration_chunks:
     calibrator.update_calibration(true_chunk, pred_chunk)
-# or, if the score itself was already computed some other way:
-#     calibrator.accumulate_score(score_chunk)
 intervals = calibrator.predict(pred_test, alphas=[0.1, 0.2])
 ```
 

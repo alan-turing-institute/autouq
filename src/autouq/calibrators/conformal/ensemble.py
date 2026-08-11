@@ -22,8 +22,8 @@ class Ensemble(ConformalCalibrator[TensorBNCM, TensorBNC, TensorNC]):
 
     In addition to the whole-tensor :meth:`calibrate`/:meth:`predict` API,
     this calibrator supports streaming one ensemble member at a time via
-    :meth:`reset_stream`/:meth:`update_stream`/:meth:`finalize_stream_score` (for a
-    calibration example) or :meth:`finalize_stream_predict` (for a
+    :meth:`reset_stream`/:meth:`update_stream`/:meth:`stream_score` (for a
+    calibration example) or :meth:`stream_predict` (for a
     prediction example) - useful when the full ``(*, channel, ensemble)``
     tensor for one example is too large to materialize at once. ``mode="std"``
     streams with no member retention at all (Welford's online algorithm);
@@ -279,15 +279,15 @@ class Ensemble(ConformalCalibrator[TensorBNCM, TensorBNC, TensorNC]):
                 dimension.
             true: Target for this example, identical across members - only
                 needs to be passed once (e.g. on the first call). Required
-                before :meth:`finalize_stream_score` (a calibration example);
+                before :meth:`stream_score` (a calibration example);
                 omit it when the example is prediction-only
-                (:meth:`finalize_stream_predict`).
+                (:meth:`stream_predict`).
         """
         if true is not None and self._online_true is None:
             self._online_true = true
         self._accumulate_member(member)
 
-    def finalize_stream_score(
+    def stream_score(
         self, chunk_size: int | None = None, chunk_dim: int = -2
     ) -> TensorNC:
         """Return this calibration example's conformity score.
@@ -301,7 +301,7 @@ class Ensemble(ConformalCalibrator[TensorBNCM, TensorBNC, TensorNC]):
             calibrator.reset_stream()
             for member in date_members:
                 calibrator.update_stream(member, true=date_true)
-            score = calibrator.finalize_stream_score(chunk_size=2048)
+            score = calibrator.stream_score(chunk_size=2048)
             calibrator.accumulate_score(score)
 
         Args:
@@ -316,7 +316,7 @@ class Ensemble(ConformalCalibrator[TensorBNCM, TensorBNC, TensorNC]):
         summary = self._finalize_member_accumulator(chunk_size, chunk_dim)
         if self._online_true is None:
             msg = (
-                "finalize_stream_score requires `true` to have been passed to "
+                "stream_score requires `true` to have been passed to "
                 "update_stream for a calibration example."
             )
             raise ValueError(msg)
@@ -324,7 +324,7 @@ class Ensemble(ConformalCalibrator[TensorBNCM, TensorBNC, TensorNC]):
         self._online_true = None
         return score
 
-    def finalize_stream_predict(
+    def stream_predict(
         self,
         alphas: float | Sequence[float],
         chunk_size: int | None = None,
@@ -332,15 +332,15 @@ class Ensemble(ConformalCalibrator[TensorBNCM, TensorBNC, TensorNC]):
     ) -> TensorBNIA:
         """Return calibrated prediction intervals for this streamed example.
 
-        The prediction-time counterpart of :meth:`finalize_stream_score`: combines
+        The prediction-time counterpart of :meth:`stream_score`: combines
         the members streamed via :meth:`update_stream` into the same
         intervals :meth:`predict` would compute from the whole tensor. No
         ``true`` is required (or used, even if passed to `update_stream`).
 
         Args:
             alphas: One or more miscoverage levels in ``(0, 1)``.
-            chunk_size: See :meth:`finalize_stream_score`.
-            chunk_dim: See :meth:`finalize_stream_score`.
+            chunk_size: See :meth:`stream_score`.
+            chunk_dim: See :meth:`stream_score`.
         """
         alpha_values = validate_alphas(alphas)
         summary = self._finalize_member_accumulator(chunk_size, chunk_dim)

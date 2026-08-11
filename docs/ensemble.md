@@ -75,7 +75,7 @@ for true_for_this_example, members in calibration_examples:
     calibrator.reset_stream()
     for member in members:                  # one model forward pass each
         calibrator.update_stream(member, true=true_for_this_example)
-    score = calibrator.finalize_stream_score(chunk_size=2048)   # chunk_size optional
+    score = calibrator.stream_score(chunk_size=2048)   # chunk_size optional
     calibrator.accumulate_score(score)       # feed the base calibration layer
 
 intervals = calibrator.predict(pred_test, alphas=[0.1, 0.2])
@@ -86,7 +86,7 @@ dimension (i.e. `TensorBNC`, not `TensorBNCM`). `true` only needs to be
 passed once (e.g. alongside the first member) - it's identical across
 members for a given example.
 
-`finalize_stream_score` returns the score for that one example (the same value
+`stream_score` returns the score for that one example (the same value
 `calibrate` would compute from the whole tensor), ready to hand to
 `accumulate_score`. For `mode="std"`, this is fully incremental - members are
 never retained, only a running mean and sum-of-squared-deviations (Welford's
@@ -98,10 +98,10 @@ computation over `chunk_dim` (default: the axis immediately before
 combined one chunk at a time instead of all at once.
 
 The same member-streaming machinery has a prediction-time counterpart,
-`finalize_stream_predict(alphas, chunk_size=..., chunk_dim=...)`, which
-skips the score computation (no `true` needed) and returns calibrated
-intervals directly for the streamed example - the streaming equivalent of
-`predict` for one example's members.
+`stream_predict(alphas, chunk_size=..., chunk_dim=...)`, which skips the
+score computation (no `true` needed) and returns calibrated intervals
+directly for the streamed example - the streaming equivalent of `predict`
+for one example's members.
 
 ## Validity Notes
 

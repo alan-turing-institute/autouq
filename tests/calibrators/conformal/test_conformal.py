@@ -44,6 +44,37 @@ def test_calibration_scores_concatenate_lazily(calibrator):
     assert calibrator.scores is not None
 
 
+def test_materialized_scores_do_not_retain_duplicate_pending_chunks(calibrator):
+    calibrator.reset_calibration()
+    calibrator.update_calibration(torch.tensor([[1.0]]), torch.tensor([[0.0]]))
+    calibrator.update_calibration(torch.tensor([[4.0]]), torch.tensor([[0.0]]))
+
+    calibrator._calibration_scores()
+
+    # Once folded into self.scores, the individual chunks are no longer held
+    # onto - otherwise they'd sit around doubling memory for no reason.
+    assert calibrator._pending_score_chunks == []
+
+
+def test_streaming_can_resume_after_materialization_without_losing_data(calibrator):
+    calibrator.reset_calibration()
+    calibrator.update_calibration(torch.tensor([[1.0]]), torch.tensor([[0.0]]))
+    calibrator.update_calibration(torch.tensor([[4.0]]), torch.tensor([[0.0]]))
+
+    # Materialize mid-stream (e.g. an intermediate predict()/score_quantile() call).
+    torch.testing.assert_close(
+        calibrator._calibration_scores(), torch.tensor([[1.0], [4.0]])
+    )
+
+    # Streaming resumes after that - the already-materialized scores must not
+    # be dropped.
+    calibrator.update_calibration(torch.tensor([[9.0]]), torch.tensor([[0.0]]))
+
+    torch.testing.assert_close(
+        calibrator._calibration_scores(), torch.tensor([[1.0], [4.0], [9.0]])
+    )
+
+
 def test_accumulate_score_appends_precomputed_chunks(calibrator):
     calibrator.reset_calibration()
     calibrator.accumulate_score(torch.tensor([[1.0], [2.0]]))

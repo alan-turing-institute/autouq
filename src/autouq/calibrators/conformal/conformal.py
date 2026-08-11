@@ -98,8 +98,12 @@ class ConformalCalibrator(
                 output shape.
         """
         self._validate_score_chunk(score)
+        if self.scores is not None:
+            # Already-materialized scores would otherwise be dropped below;
+            # fold them back into the pending chunks so nothing is lost.
+            self._pending_score_chunks.append(self.scores)
+            self.scores = None
         self._pending_score_chunks.append(score)
-        self.scores = None
 
     def _calibration_scores(self) -> ScoreT:
         if self.scores is None:
@@ -110,6 +114,9 @@ class ConformalCalibrator(
                 raise RuntimeError(msg)
             chunks = cast("list[Tensor]", self._pending_score_chunks)
             self.scores = cast("ScoreT", torch.cat(chunks, dim=0))
+            # Now folded into self.scores; drop the individual chunks so they
+            # don't sit around doubling memory for the calibrator's lifetime.
+            self._pending_score_chunks = []
         return self.scores
 
     def score_quantile(self, alpha: float) -> ScoreQuantileT:

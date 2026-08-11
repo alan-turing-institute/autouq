@@ -16,6 +16,13 @@ from autouq.calibrators.conformal import (
 from autouq.calibrators.ecc import ECC
 from autouq.calibrators.emos import EMOS, EMOSECC
 from autouq.calibrators.grouping import AxisRole
+from autouq.calibrators.rcps import (
+    EnsembleRCPS,
+    HoeffdingBound,
+    RCPSCalibrator,
+    RiskBound,
+    ScaledIntervalRCPS,
+)
 
 __all__ = [
     "ECC",
@@ -29,6 +36,11 @@ __all__ = [
     "ConformalizedQuantileRegression",
     "DependenceCalibrator",
     "Ensemble",
+    "EnsembleRCPS",
+    "HoeffdingBound",
+    "RCPSCalibrator",
+    "RiskBound",
     "SamplableCalibrator",
+    "ScaledIntervalRCPS",
     "StandardDeviation",
 ]

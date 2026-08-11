@@ -65,6 +65,11 @@ The interval axis has size 2 and stores lower then upper bounds.
 - [`Ensemble`](ensemble.md) calibrates ensemble predictions using empirical
   ensemble intervals or normalized residuals.
 
+Risk-controlling prediction sets are documented separately in
+[`RCPS calibrators`](rcps.md). They control expected loss with a configured
+failure probability over the calibration-set draw, rather than providing the
+marginal coverage guarantee described here.
+
 ## Expectations
 
 - Call `calibrate` before `predict` or `score_quantile`.

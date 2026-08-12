@@ -245,8 +245,6 @@ class Ensemble(ConformalCalibrator[TensorBNCM, TensorBNC, TensorNC]):
         Chunks of ``chunk_size`` at a time, so the full ``(*, channel,
         ensemble)`` stack over all retained members is never assembled at
         once - only one ``(*chunk, channel, ensemble)`` slice at a time.
-        Mirrors fastnet's ``_finalize_over_gridpoint_chunks`` (chunking over
-        the gridpoint axis), generalized to a caller-specified axis.
         """
         template = members[0]
         dim = chunk_dim if chunk_dim >= 0 else template.ndim + chunk_dim

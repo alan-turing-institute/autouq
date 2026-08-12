@@ -64,7 +64,9 @@ class Ensemble(ConformalCalibrator[TensorBNCM, TensorBNC, TensorNC]):
 
         self.ensemble_alpha = ensemble_alpha
         self.min_scale = min_scale
-        self._online_true: TensorBNC | None = None
+        # The target for the current stream - one value, shared by every
+        # member of that stream (a stream covers a single example).
+        self._stream_true: TensorBNC | None = None
         self._reset_member_accumulator()
 
     # ------------------------------------------------------------------
@@ -168,33 +170,33 @@ class Ensemble(ConformalCalibrator[TensorBNCM, TensorBNC, TensorNC]):
 
     def _reset_member_accumulator(self) -> None:
         if self.mode is _EnsembleMode.QUANTILE:
-            self._online_members: list[TensorBNC] = []
+            self._stream_members: list[TensorBNC] = []
         else:
-            self._online_count = 0
-            self._online_mean: TensorBNC | None = None
-            self._online_m2: TensorBNC | None = None
+            self._stream_count = 0
+            self._stream_mean: TensorBNC | None = None
+            self._stream_m2: TensorBNC | None = None
 
     def _accumulate_member(self, member: TensorBNC) -> None:
         if self.mode is _EnsembleMode.QUANTILE:
-            self._online_members.append(member)
+            self._stream_members.append(member)
             return
         # Welford's online algorithm: running mean and sum-of-squared-deviations,
         # updated one member at a time with no retention.
-        self._online_count += 1
-        if self._online_mean is None:
-            self._online_mean = member.clone()
-            self._online_m2 = torch.zeros_like(member)
+        self._stream_count += 1
+        if self._stream_mean is None:
+            self._stream_mean = member.clone()
+            self._stream_m2 = torch.zeros_like(member)
             return
-        assert self._online_m2 is not None
-        delta = member - self._online_mean
-        self._online_mean = self._online_mean + delta / self._online_count
-        self._online_m2 = self._online_m2 + delta * (member - self._online_mean)
+        assert self._stream_m2 is not None
+        delta = member - self._stream_mean
+        self._stream_mean = self._stream_mean + delta / self._stream_count
+        self._stream_m2 = self._stream_m2 + delta * (member - self._stream_mean)
 
     def _finalize_member_accumulator(
         self, chunk_size: int | None, chunk_dim: int
     ) -> tuple[TensorBNC, TensorBNC]:
         if self.mode is _EnsembleMode.QUANTILE:
-            n_members = len(self._online_members)
+            n_members = len(self._stream_members)
             if n_members < 2:
                 msg = (
                     "Ensemble predictions must include at least 2 members; "
@@ -209,30 +211,30 @@ class Ensemble(ConformalCalibrator[TensorBNCM, TensorBNC, TensorNC]):
                     )
                     raise ValueError(msg)
                 summary = self._quantile_interval_chunked(
-                    self._online_members, chunk_size, chunk_dim
+                    self._stream_members, chunk_size, chunk_dim
                 )
             else:
-                ensemble = torch.stack(self._online_members, dim=-1)
+                ensemble = torch.stack(self._stream_members, dim=-1)
                 summary = self._quantile_interval(ensemble)
-            self._online_members = []
+            self._stream_members = []
             return summary
 
-        if self._online_count < 2:
+        if self._stream_count < 2:
             msg = (
                 "Ensemble predictions must include at least 2 members; "
-                f"got {self._online_count}."
+                f"got {self._stream_count}."
             )
             raise ValueError(msg)
         # count >= 2 guarantees _accumulate_member has set both by now.
-        assert self._online_mean is not None
-        assert self._online_m2 is not None
-        scale = torch.sqrt(self._online_m2 / self._online_count).clamp_min(
+        assert self._stream_mean is not None
+        assert self._stream_m2 is not None
+        scale = torch.sqrt(self._stream_m2 / self._stream_count).clamp_min(
             self.min_scale
         )
-        center = self._online_mean
-        self._online_mean = None
-        self._online_m2 = None
-        self._online_count = 0
+        center = self._stream_mean
+        self._stream_mean = None
+        self._stream_m2 = None
+        self._stream_count = 0
         return center, scale
 
     def _quantile_interval_chunked(
@@ -268,7 +270,7 @@ class Ensemble(ConformalCalibrator[TensorBNCM, TensorBNC, TensorNC]):
         Call once before streaming members for a new calibration or
         prediction example via :meth:`update_stream`.
         """
-        self._online_true = None
+        self._stream_true = None
         self._reset_member_accumulator()
 
     def update_stream(self, member: TensorBNC, true: TensorBNC | None = None) -> None:
@@ -283,8 +285,8 @@ class Ensemble(ConformalCalibrator[TensorBNCM, TensorBNC, TensorNC]):
                 omit it when the example is prediction-only
                 (:meth:`stream_predict`).
         """
-        if true is not None and self._online_true is None:
-            self._online_true = true
+        if true is not None and self._stream_true is None:
+            self._stream_true = true
         self._accumulate_member(member)
 
     def stream_score(
@@ -314,14 +316,14 @@ class Ensemble(ConformalCalibrator[TensorBNCM, TensorBNC, TensorNC]):
                 before ``channel`` (typically a spatial axis).
         """
         summary = self._finalize_member_accumulator(chunk_size, chunk_dim)
-        if self._online_true is None:
+        if self._stream_true is None:
             msg = (
                 "stream_score requires `true` to have been passed to "
                 "update_stream for a calibration example."
             )
             raise ValueError(msg)
-        score = self._combine_score(self._online_true, summary)
-        self._online_true = None
+        score = self._combine_score(self._stream_true, summary)
+        self._stream_true = None
         return score
 
     def stream_predict(

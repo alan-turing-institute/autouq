@@ -238,9 +238,7 @@ def test_std_mode_streaming_is_fully_incremental_via_welford():
     for member_idx in range(n_members):
         streaming.update_stream(pred[..., member_idx], true=true)
         # No members retained at any point - only running Welford accumulators.
-        assert (
-            not hasattr(streaming, "_online_members") or streaming._online_members == []
-        )
+        assert not hasattr(streaming, "_stream_members")
     streaming_score = streaming.stream_score()
 
     torch.testing.assert_close(streaming_score, reference_score, atol=1e-5, rtol=1e-5)

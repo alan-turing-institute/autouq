@@ -78,6 +78,14 @@ until it's required. `reset` clears any cached or pending scores;
 `calibrate`/`cache_scores` still work as before and discard any pending
 streamed chunks when called.
 
+To read out the full calibration-scores tensor directly - e.g. to combine
+this calibrator's locally-streamed scores with scores accumulated elsewhere,
+before deciding on a final `alpha` - call `materialize_scores()` rather than
+inspecting `scores` directly: `scores` stays `None` until something forces
+materialization, while `materialize_scores()` triggers it (concatenating any
+pending chunks, at most once) and returns the result, or `None` if nothing
+has been accumulated yet.
+
 Some calibrators (e.g. [`Ensemble`](ensemble.md)) add a further, subclass-specific
 streaming layer for computing one calibration example's score itself, feeding
 `accumulate_score` in turn - see that calibrator's docs for details.

@@ -75,6 +75,38 @@ def test_streaming_can_resume_after_materialization_without_losing_data(calibrat
     )
 
 
+def test_materialize_scores_returns_none_when_nothing_accumulated(calibrator):
+    calibrator.reset()
+
+    assert calibrator.materialize_scores() is None
+
+
+def test_materialize_scores_concatenates_pending_chunks(calibrator):
+    calibrator.reset()
+    calibrator.update(torch.tensor([[1.0]]), torch.tensor([[0.0]]))
+    calibrator.update(torch.tensor([[4.0]]), torch.tensor([[0.0]]))
+
+    materialized = calibrator.materialize_scores()
+
+    torch.testing.assert_close(materialized, torch.tensor([[1.0], [4.0]]))
+    # Same object subsequent calibration-scores access sees -- materialized
+    # into self.scores, not just returned as a fresh concatenation each time.
+    assert calibrator.scores is materialized
+    assert calibrator._pending_score_chunks == []
+
+
+def test_materialize_scores_is_idempotent(calibrator):
+    calibrator.reset()
+    calibrator.update(torch.tensor([[1.0]]), torch.tensor([[0.0]]))
+
+    first = calibrator.materialize_scores()
+    calibrator.update(torch.tensor([[4.0]]), torch.tensor([[0.0]]))
+    second = calibrator.materialize_scores()
+
+    torch.testing.assert_close(first, torch.tensor([[1.0]]))
+    torch.testing.assert_close(second, torch.tensor([[1.0], [4.0]]))
+
+
 def test_accumulate_score_appends_precomputed_chunks(calibrator):
     calibrator.reset()
     calibrator.accumulate_score(torch.tensor([[1.0], [2.0]]))

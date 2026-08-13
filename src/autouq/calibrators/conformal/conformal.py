@@ -105,19 +105,42 @@ class ConformalCalibrator(
             self.scores = None
         self._pending_score_chunks.append(score)
 
-    def _calibration_scores(self) -> ScoreT:
-        if self.scores is None:
-            if not self._pending_score_chunks:
-                msg = (
-                    "Calibrator must be calibrated before computing the score quantile."
-                )
-                raise RuntimeError(msg)
+    def materialize_scores(self) -> ScoreT | None:
+        """Concatenate any pending streamed chunks into ``scores`` and return it.
+
+        ``update``/``accumulate_score`` intentionally leave ``scores``
+        unmaterialized until something needs the full tensor, to avoid
+        concatenating on every single streamed chunk. :meth:`score_quantile`
+        and :meth:`predict` already trigger this materialization internally;
+        this method exists for callers that need to read out the full
+        calibration-scores tensor directly (e.g. to combine this
+        calibrator's local scores with scores accumulated elsewhere) without
+        going through either of those.
+
+        Idempotent: pending chunks are concatenated at most once, the same
+        materialization :meth:`score_quantile`/:meth:`predict` already do.
+
+        Returns:
+            The full calibration-scores tensor, or ``None`` if nothing has
+            been accumulated yet -- unlike :meth:`score_quantile`/
+            :meth:`predict`, this does not raise in that case, so a caller
+            can distinguish "nothing accumulated" (e.g. an empty shard) from
+            an error.
+        """
+        if self.scores is None and self._pending_score_chunks:
             chunks = cast("list[Tensor]", self._pending_score_chunks)
             self.scores = cast("ScoreT", torch.cat(chunks, dim=0))
             # Now folded into self.scores; drop the individual chunks so they
             # don't sit around doubling memory for the calibrator's lifetime.
             self._pending_score_chunks = []
         return self.scores
+
+    def _calibration_scores(self) -> ScoreT:
+        scores = self.materialize_scores()
+        if scores is None:
+            msg = "Calibrator must be calibrated before computing the score quantile."
+            raise RuntimeError(msg)
+        return scores
 
     def score_quantile(self, alpha: float) -> ScoreQuantileT:
         r"""Return the conformal score threshold.

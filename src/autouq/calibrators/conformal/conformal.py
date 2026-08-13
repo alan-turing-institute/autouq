@@ -3,6 +3,8 @@ import math
 from collections.abc import Sequence
 from typing import Generic, TypeVar, cast
 
+import torch
+
 from autouq.calibrators.base import Calibrator, PredT
 from autouq.calibrators.grouping import validate_alpha, validate_alphas
 from autouq.types import Tensor, TensorBN, TensorBNC, TensorBNIA, TensorN
@@ -36,27 +38,109 @@ class ConformalCalibrator(
     ):
         super().__init__(temporal_dim=temporal_dim, spatial_dims=spatial_dims)
         self.scores: ScoreT | None = None
+        self._pending_score_chunks: list[ScoreT] = []
 
     @abc.abstractmethod
     def _score(self, true: TensorBNC, pred: PredT) -> ScoreT: ...
 
-    def cache_scores(self, scores: ScoreT) -> None:
+    @staticmethod
+    def _validate_score_chunk(scores: ScoreT) -> None:
         if scores.ndim == 0:
             msg = "Calibration scores must include a calibration dimension."
             raise ValueError(msg)
         if scores.shape[0] == 0:
             msg = "Calibration scores must contain at least one sample."
             raise ValueError(msg)
+
+    def cache_scores(self, scores: ScoreT) -> None:
+        self._validate_score_chunk(scores)
         self.scores = scores
+        self._pending_score_chunks = []
 
     def calibrate(self, true: TensorBNC, pred: PredT) -> None:
         self.cache_scores(self._score(true, pred))
 
+    def reset(self) -> None:
+        """Clear cached scores and any pending streamed calibration chunks.
+
+        Call once before streaming calibration chunks (e.g. one per
+        calibration example or per batch of exchangeable examples) via
+        :meth:`update`.
+        """
+        self.scores = None
+        self._pending_score_chunks = []
+
+    def update(self, true: TensorBNC, pred: PredT) -> None:
+        """Accumulate one calibration chunk's score without concatenating yet.
+
+        Chunks are concatenated lazily, once, the next time scores are
+        needed (:meth:`score_quantile` or :meth:`predict`), so many small
+        chunks can be streamed in - e.g. one exchangeable calibration example
+        at a time - without ever materializing the full calibration score
+        tensor until it's actually required.
+
+        Args:
+            true: Calibration target for this chunk.
+            pred: Calibration prediction for this chunk.
+        """
+        self.accumulate_score(self._score(true, pred))
+
+    def accumulate_score(self, score: ScoreT) -> None:
+        """Append an already-computed score chunk to the pending calibration bank.
+
+        Complements :meth:`update`, for calibrators whose subclass-specific
+        streaming API computes a calibration example's score itself (e.g. by
+        streaming ensemble members one at a time) rather than through a
+        single :meth:`_score` call on ``(true, pred)``.
+
+        Args:
+            score: One calibration chunk's score, matching :meth:`_score`'s
+                output shape.
+        """
+        self._validate_score_chunk(score)
+        if self.scores is not None:
+            # Already-materialized scores would otherwise be dropped below;
+            # fold them back into the pending chunks so nothing is lost.
+            self._pending_score_chunks.append(self.scores)
+            self.scores = None
+        self._pending_score_chunks.append(score)
+
+    def materialize_scores(self) -> ScoreT | None:
+        """Concatenate any pending streamed chunks into ``scores`` and return it.
+
+        ``update``/``accumulate_score`` intentionally leave ``scores``
+        unmaterialized until something needs the full tensor, to avoid
+        concatenating on every single streamed chunk. :meth:`score_quantile`
+        and :meth:`predict` already trigger this materialization internally;
+        this method exists for callers that need to read out the full
+        calibration-scores tensor directly (e.g. to combine this
+        calibrator's local scores with scores accumulated elsewhere) without
+        going through either of those.
+
+        Idempotent: pending chunks are concatenated at most once, the same
+        materialization :meth:`score_quantile`/:meth:`predict` already do.
+
+        Returns:
+            The full calibration-scores tensor, or ``None`` if nothing has
+            been accumulated yet -- unlike :meth:`score_quantile`/
+            :meth:`predict`, this does not raise in that case, so a caller
+            can distinguish "nothing accumulated" (e.g. an empty shard) from
+            an error.
+        """
+        if self.scores is None and self._pending_score_chunks:
+            chunks = cast("list[Tensor]", self._pending_score_chunks)
+            self.scores = cast("ScoreT", torch.cat(chunks, dim=0))
+            # Now folded into self.scores; drop the individual chunks so they
+            # don't sit around doubling memory for the calibrator's lifetime.
+            self._pending_score_chunks = []
+        return self.scores
+
     def _calibration_scores(self) -> ScoreT:
-        if self.scores is None:
+        scores = self.materialize_scores()
+        if scores is None:
             msg = "Calibrator must be calibrated before computing the score quantile."
             raise RuntimeError(msg)
-        return self.scores
+        return scores
 
     def score_quantile(self, alpha: float) -> ScoreQuantileT:
         r"""Return the conformal score threshold.

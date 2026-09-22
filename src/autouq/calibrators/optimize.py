@@ -108,24 +108,28 @@ def _descent_step(grad: Tensor, hess: Tensor, room: Tensor) -> Tensor:
 def _newton_step(grad: Tensor, hess: Tensor, free: Tensor) -> Tensor:
     """Newton step over the ``free`` coordinates; the others stay put.
 
-    The Hessian is scaled by its diagonal and its eigenvalues replaced by their
-    absolute values, floored, so the model is positive definite however badly
-    the parameters are scaled.
+    The Hessian is scaled by its own diagonal, and the eigenvalues of the scaled
+    matrix are replaced by their absolute values and floored relative to the
+    largest, so the model is positive definite however badly the parameters are
+    scaled. The diagonal is used as it stands: flooring it relative to the
+    largest entry would mis-scale a coordinate whose curvature is orders of
+    magnitude smaller, and the eigenvalue floor would then crush its step while
+    the stopping test read the tiny step as convergence.
     """
     eye = torch.eye(grad.shape[-1], dtype=grad.dtype, device=grad.device)
     hess = torch.where(free[:, :, None] & free[:, None, :], hess, eye)
     grad = torch.where(free, grad, 0.0)
-    scale = _floor_magnitude(hess.diagonal(dim1=-2, dim2=-1).abs()).rsqrt()
+    tiny = torch.finfo(grad.dtype).tiny
+    diag = hess.diagonal(dim1=-2, dim2=-1).abs()
+    # a zero diagonal entry carries no scale of its own; the row's largest keeps
+    # the scaled matrix finite where the true curvature is elsewhere
+    diag = torch.where(diag > 0, diag, diag.amax(dim=-1, keepdim=True))
+    scale = diag.clamp_min(tiny).rsqrt()
     evals, evecs = torch.linalg.eigh(hess * scale[:, :, None] * scale[:, None, :])
-    mags = _floor_magnitude(evals.abs())
+    mags = evals.abs()
+    mags = mags.clamp_min(_REL_FLOOR * mags.amax(dim=-1, keepdim=True)).clamp_min(tiny)
     scaled_grad = (scale * grad)[..., None]
     return -scale * (evecs @ ((evecs.mT @ scaled_grad) / mags[..., None]))[..., 0]
-
-
-def _floor_magnitude(t: Tensor) -> Tensor:
-    """Floor non-negative values at a fraction of their row's largest, and above 0."""
-    t = t.clamp_min(_REL_FLOOR * t.amax(dim=-1, keepdim=True))
-    return t.clamp_min(torch.finfo(t.dtype).tiny)
 
 
 def _backtrack(

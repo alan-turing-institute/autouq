@@ -360,6 +360,47 @@ def test_emos_fit_over_all_leads_matches_fitting_each_lead_alone():
         torch.testing.assert_close(sigma[:, t : t + 1], sigma_t, rtol=1e-4, atol=0)
 
 
+def test_calibrate_keeps_a_constant_truth_group_sharp():
+    # a masked or dead cell carries no signal: its fitted predictive must stay
+    # sharp, not be inflated by a Newton step the conditioning crushed to zero
+    torch.manual_seed(0)
+    y = torch.randn(256, 1, 4, 1)
+    y[:, :, 2:] = 0.0
+    pred = y.unsqueeze(-1) + 0.5 * torch.randn(256, 1, 4, 1, 8)
+
+    emos = EMOS(per=(AxisRole.SPACE,))
+    emos.calibrate(y, pred)
+    _, sigma = emos._calibrated_mean_std(pred)
+
+    assert sigma[:, :, 2:].max() < 1e-4  # the constant cells
+    assert sigma[:, :, :2].min() > 1e-2  # the live ones are untouched
+
+
+def test_calibrate_does_not_amplify_a_collapsed_ensemble_group():
+    # every member equal at one lead leaves gamma1 unidentifiable there; it must
+    # not come back inflated when predicting on an ensemble that does spread
+    torch.manual_seed(0)
+    y = torch.randn(256, 2, 3, 1)
+    pred = y.unsqueeze(-1) + 0.5 * torch.randn(256, 2, 3, 1, 8)
+    pred[:, 1] = pred[:, 1, ..., :1].expand_as(pred[:, 1])
+
+    emos = EMOS()
+    emos.calibrate(y, pred)
+    spreading = y.unsqueeze(-1) + 0.5 * torch.randn(256, 2, 3, 1, 8)
+    _, sigma = emos._calibrated_mean_std(spreading)
+
+    assert sigma[:, 1].max() < 10 * sigma[:, 0].max()
+
+
+def test_calibrate_rejects_non_finite_inputs():
+    torch.manual_seed(0)
+    y = torch.randn(64, 2, 3, 1)
+    pred = y.unsqueeze(-1) + torch.randn(64, 2, 3, 1, 8)
+    pred[0, 0, 0, 0, 0] = float("nan")
+    with pytest.raises(ValueError, match="finite"):
+        EMOS().calibrate(y, pred)
+
+
 def test_calibrate_warns_when_groups_do_not_converge():
     y, pred = _leads_that_differ(4, 512, seed=5, noise_seed=6)
     with pytest.warns(RuntimeWarning, match="did not converge"):

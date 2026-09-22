@@ -111,8 +111,10 @@ every lead to its optimum (the regression test in `tests/test_emos.py` checks th
 
 ### Other numerical details
 
-- The fit runs in float64 whatever the input dtype; the fitted coefficients are
-  cast back to the forecast's dtype and device at `predict`/`sample` time.
+- The fit runs in float64: the ensemble mean and variance are reduced in the
+  input's own dtype and cast afterwards, and everything from the per-group
+  standardisation onwards is float64. The fitted coefficients are cast back to
+  the forecast's dtype and device at `predict`/`sample` time.
 - Inputs are standardised per group, and the ensemble variance is additionally
   scaled to mean one per group, so every coefficient is of order one during the
   fit. (After standardising by the truth's spread alone, the ensemble variance of a

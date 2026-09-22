@@ -190,6 +190,9 @@ class EMOS(SamplableCalibrator):
 
     def calibrate(self, true: TensorBTSC, pred: TensorBTSCM) -> None:
         """Fit per-group affine coefficients by minimising mean Gaussian CRPS."""
+        if not (torch.isfinite(true).all() and torch.isfinite(pred).all()):
+            msg = "EMOS.calibrate needs finite `true` and `pred`; got NaN or inf."
+            raise ValueError(msg)
         xbar, s2 = (m.to(_FIT_DTYPE) for m in self._ensemble_mean_var(pred))
         true = true.to(_FIT_DTYPE)
         group_dims, _, view = group_layout(xbar.shape, self.per)
@@ -203,7 +206,10 @@ class EMOS(SamplableCalibrator):
         xbar = (xbar - loc_v) / scale_v
         true = (true - loc_v) / scale_v
         s2 = s2 / scale_v**2
-        spread = s2.mean(dim=pooled).clamp_min(_VAR_FLOOR)
+        # a group whose ensemble has collapsed has no spread to scale by; leaving
+        # it at one keeps gamma1 from being divided back up by a floor at predict
+        mean_s2 = s2.mean(dim=pooled)
+        spread = torch.where(mean_s2 > 0, mean_s2, torch.ones_like(mean_s2))
         s2 = s2 / spread.view(view)
         objective = _GroupCRPS(true, xbar, s2, view, pooled)
 

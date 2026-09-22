@@ -45,21 +45,20 @@ For each fitted group (see §3), EMOS fits
 ```
 
 subject to `γ₀, γ₁ ≥ 0`, by minimising the mean **closed-form Gaussian CRPS**
-over the calibration set with L-BFGS (`max_iter=100`, `lr=1.0` by default,
-strong-Wolfe line search). It subsumes pure variance inflation as the constrained
-special case `β₀=0, β₁=1, γ₀=0` (we do **not** currently expose that as a fitting
-mode — see §6).
+over the calibration set. Every group is solved to its own optimum (see "Fitting"
+below). It subsumes pure variance inflation as the constrained special case
+`β₀=0, β₁=1, γ₀=0` (we do **not** currently expose that as a fitting mode — see §6).
 
-### Non-negativity via a per-coefficient softplus
+### Non-negativity on each coefficient
 
-We enforce `γ₀, γ₁ ≥ 0` by passing **each coefficient** through softplus:
+We enforce `γ₀, γ₁ ≥ 0` as bounds on **each coefficient**:
 
 ```
-σ²_cal = softplus(γ₀) + softplus(γ₁) · s²
+σ²_cal = γ₀ + γ₁ · s²,   γ₀ ≥ 0, γ₁ ≥ 0
 ```
 
-This is deliberately **not** the alternative `softplus(γ₀ + γ₁·s²)` (softplus
-wrapped around the whole expression). The per-coefficient form is better for this
+This is deliberately **not** a single link wrapped around the whole expression,
+such as `softplus(γ₀ + γ₁·s²)`. Constraining each coefficient is better for this
 model class for three reasons:
 
 1. **It stays canonical EMOS.** The textbook model (Gneiting et al. 2005) makes
@@ -69,24 +68,60 @@ model class for three reasons:
    form, the slope is `dσ²/ds² = sigmoid(γ₀+γ₁s²)·γ₁`, whose sign equals the sign
    of `γ₁`. Nothing stops the optimizer choosing `γ₁ < 0`, i.e. predictive
    variance *decreasing* as the ensemble spreads out — physically backwards. The
-   per-coefficient softplus forces `softplus(γ₁) ≥ 0`, so the slope is always
-   non-negative.
-3. **It is interpretable.** `softplus(γ₀)` is a variance floor (uncertainty even
-   when the ensemble collapses); `softplus(γ₁)` is the spread multiplier. They
-   stay separate.
+   bound `γ₁ ≥ 0` keeps the slope non-negative.
+3. **It is interpretable.** `γ₀` is a variance floor (uncertainty even when the
+   ensemble collapses); `γ₁` is the spread multiplier. They stay separate.
+
+Earlier versions imposed the same constraints through a per-coefficient softplus,
+`softplus(γ₀) + softplus(γ₁)·s²`. Its gradient vanishes as a coefficient
+approaches zero (`softplus′(r) ≈ eʳ`), so a coefficient pushed towards zero during
+the fit could not come back even when its optimum was well above zero. With bounds,
+a coefficient can go to zero where zero is optimal (a common case for `γ₀`) without
+freezing on the way.
 
 The wrap-the-sum / single-link idiom *is* the right choice in **neural**
 distributional regression (e.g. Rasp & Lerch 2018 use `exp(·)`), where the
 standard deviation is the output of a flexible network and there are no separate
 `γ₀, γ₁` to constrain. That is a different model class from the affine EMOS here.
 
+### Fitting: every group to its own optimum
+
+The groups are independent problems of four coefficients each, and the objective is
+their sum. `calibrate` solves them all at once but each to its own convergence
+(`autouq.calibrators.optimize.minimize_per_group`). Every group gets its gradient
+and 4×4 Hessian in closed form (the Gaussian CRPS has closed-form derivatives,
+`mathutils.gaussian_crps_derivatives`), then takes a Newton step on a
+positive-definite model of that Hessian (scaled by its diagonal, eigenvalues
+replaced by their absolute values), in which no variance coefficient moves more than
+90% of the way to zero, and backtracks until its CRPS decreases enough. Iterates
+therefore stay inside the bounds, and a coefficient whose optimum is zero approaches
+it geometrically. A group stops when the predicted decrease of its step falls below
+`tol` (default `1e-10`) times its mean CRPS. `max_iter` (default 100) caps the
+iterations; groups that miss `tol` within it trigger a `RuntimeWarning` naming how
+many.
+
+Earlier versions ran one L-BFGS over all groups' coefficients together, on the mean
+CRPS pooled over groups. That couples the groups' stopping rules, iteration budget
+and curvature model: the pooled loss change drops below the fixed tolerance while
+individual groups are still far from their optimum, and groups that differ from
+each other slow one another down. On 100 lead times with widely different
+coefficients, about half the leads ended more than 1% above their optimum and far
+from nominal coverage. Solving each group separately to a relative tolerance brings
+every lead to its optimum (the regression test in `tests/test_emos.py` checks this).
+
 ### Other numerical details
 
+- The fit runs in float64 whatever the input dtype; the fitted coefficients are
+  cast back to the forecast's dtype and device at `predict`/`sample` time.
+- Inputs are standardised per group, and the ensemble variance is additionally
+  scaled to mean one per group, so every coefficient is of order one during the
+  fit. (After standardising by the truth's spread alone, the ensemble variance of a
+  sharp forecast can be around 1e-4, leaving `γ₁` badly scaled.)
 - A small floor `_VAR_FLOOR = 1e-12` is added inside the `sqrt` for strict
   positivity / numerical safety (it is *not* a learned floor).
-- Initialisation: `β₀=0, β₁=1, γ₀≈1e-3, γ₁≈1` — i.e. the fit starts from a
-  near-identity, variance-inflation-like map.
-- **Divergence guard.** If L-BFGS produces non-finite coefficients the fit raises
+- Initialisation: `β₀=0, β₁=1`, with the predictive variance matched to the raw
+  ensemble mean's mean squared error and split evenly between `γ₀` and `γ₁·s²`.
+- **Divergence guard.** If the fit produces non-finite coefficients it raises
   `RuntimeError` rather than silently storing `NaN`s.
 
 ---
@@ -114,8 +149,9 @@ Before fitting, inputs are standardised per group: the location (mean) and scale
 (floored std) are estimated from `true` over the pooled axes
 (`group_location_scale`), the fit runs on the standardised `O(1)` quantities, and
 the result is de-standardised on output. This is algebraically equivalent to
-fitting on raw values — it only conditions the optimisation so L-BFGS behaves
-well at any data scale. Each group needs **at least 2 pooled samples** (so `B ≥ 2`
+fitting on raw values — it only conditions the optimisation so it behaves well at
+any data scale (the ensemble variance is also scaled to mean one per group; see
+§2). Each group needs **at least 2 pooled samples** (so `B ≥ 2`
 for the full cross) or `group_location_scale` raises `ValueError`.
 
 ### Worked example — `64×64` grid, 3 channels, 100 lead times
@@ -133,19 +169,19 @@ Working layout `(B, 100, 64, 64, 3)`. Verified counts:
 
 ### Are the sets fit separately?
 
-Statistically yes; numerically in one batched optimization. The four coefficient
-tensors carry one entry per group, and a single L-BFGS minimises the mean CRPS
-over the whole tensor. Because the loss is a sum of per-element terms and each
-element uses only its own group's coefficients, the gradient for a group depends
-**only on that group's data** — perturbing one lead's data leaves the other
-leads' coefficients unchanged to float precision. So:
+Yes, statistically and numerically, in one batched computation. The four
+coefficient tensors carry one entry per group. Because the loss is a sum of
+per-element terms and each element uses only its own group's coefficients, a
+group's gradient and Hessian depend **only on that group's data**, so each group
+takes its own Newton step, its own line search and its own stopping test (§2).
+So:
 
 - There is **no sharing of statistical strength** across groups (no smoothing).
-- The *optima* decouple, but the L-BFGS *trajectory* is shared (one global line
-  search / Hessian estimate); the per-group standardisation keeps groups
-  comparably scaled so the shared optimizer converges for all at once.
-- The full cross is ~`4 × sets` parameters in one L-BFGS (millions for a dense
-  grid) plus a full-tensor CRPS pass per iteration — computationally heavy.
+- Groups that differ from each other do not hold each other back; the result for
+  a group is the same as fitting that group alone (a regression test checks this).
+- Each Newton iteration costs one full-tensor pass for the CRPS and its closed-form
+  derivatives, plus the line-search passes. No autograd graph is kept, so memory
+  stays a small multiple of the float64 working tensors.
 
 ---
 
@@ -220,7 +256,8 @@ compromise**, not the default.
 - Configurable per-axis fitting (`per=`) over time / space / channel, any
   combination, via the `AxisRole` enum.
 - Per-group standardise → fit → de-standardise (scale-invariant conditioning).
-- Per-coefficient softplus non-negativity on the variance coefficients.
+- Per-coefficient non-negativity bounds on the variance coefficients, with every
+  group solved to its own convergence and a warning for any group that is not.
 - Reproducible sampling via `sample(generator=)`.
 - Guards: alpha validation, non-finite coefficients, degenerate per-group scale,
   device-portable fitted parameters.

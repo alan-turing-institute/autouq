@@ -1,7 +1,9 @@
+import math
+
 import pytest
 import torch
 
-from autouq.calibrators.emos import EMOS
+from autouq.calibrators.emos import EMOS, _GroupCRPS
 from autouq.calibrators.grouping import AxisRole
 
 
@@ -13,6 +15,45 @@ def _per_alpha_coverage(intervals, y_true):
     inside = (y >= lower) & (y <= upper)
     dims = tuple(range(inside.ndim - 1))
     return inside.float().mean(dim=dims)
+
+
+def _leads_that_differ(n_leads, n_samples, *, seed, noise_seed):
+    """Truth from a known per-lead EMOS whose coefficients differ widely by lead.
+
+    Per lead: ensemble mean ``m ~ N(0, amp^2)``, 10 members ``m + spread * noise``,
+    truth ``~ N(b0 + b1 * xbar, g0 + g1 * s2)``. Amplitudes span 1e-2 to 10,
+    spread/amplitude 1e-2 to 1, ``g1`` 0.1 to 30, and ``g0`` is 0 on about half
+    the leads. Coefficients come from ``seed``, samples from ``noise_seed``, so
+    one ``seed`` with two noise seeds gives a calibration and a test set.
+    """
+    coef = torch.Generator().manual_seed(seed)
+
+    def log_uniform(low, high):
+        exponent = torch.empty(n_leads).uniform_(
+            math.log10(low), math.log10(high), generator=coef
+        )
+        return 10**exponent
+
+    amp = log_uniform(1e-2, 10.0)
+    spread = log_uniform(1e-2, 1.0) * amp
+    b0 = torch.empty(n_leads).uniform_(-0.5, 0.5, generator=coef) * amp
+    b1 = torch.empty(n_leads).uniform_(0.5, 1.5, generator=coef)
+    g1 = log_uniform(0.1, 30.0)
+    g0_nonzero = (log_uniform(1e-2, 0.3) * amp) ** 2
+    g0 = torch.where(torch.rand(n_leads, generator=coef) < 0.5, 0.0, g0_nonzero)
+
+    noise = torch.Generator().manual_seed(noise_seed)
+    m = torch.randn(n_samples, n_leads, generator=noise) * amp
+    members = m[..., None] + spread[:, None] * torch.randn(
+        n_samples, n_leads, 10, generator=noise
+    )
+    xbar, s2 = members.mean(dim=-1), members.var(dim=-1)
+    y = (
+        b0
+        + b1 * xbar
+        + (g0 + g1 * s2).sqrt() * torch.randn(n_samples, n_leads, generator=noise)
+    )
+    return y[:, :, None, None], members[:, :, None, None, :]  # (B, T, 1, 1[, M])
 
 
 def _corr(a, b):
@@ -282,3 +323,123 @@ def test_emos_fits_per_channel():
     assert emos._beta1.std() > 0.3  # genuinely channel-specific
     cov = _per_alpha_coverage(emos.predict(yp_b, 0.10), y_b)
     assert 0.86 < cov[0].item() < 0.94
+
+
+def test_emos_reaches_nominal_coverage_on_every_lead_when_leads_differ():
+    # 100 leads whose true coefficients differ widely: fitting them in one pooled
+    # optimisation stalled short of most leads' optimum, leaving about half of
+    # them far from nominal coverage
+    y, pred = _leads_that_differ(100, 2048, seed=0, noise_seed=1)
+    y_test, pred_test = _leads_that_differ(100, 2048, seed=0, noise_seed=2)
+
+    emos = EMOS()
+    emos.calibrate(y, pred)
+
+    intervals = emos.predict(pred_test, 0.10)
+    lower, upper = intervals[..., 0, 0], intervals[..., 1, 0]
+    inside = (y_test >= lower) & (y_test <= upper)
+    per_lead_cov = inside.float().mean(dim=(0, 2, 3))
+    assert torch.all((per_lead_cov > 0.85) & (per_lead_cov < 0.95))
+
+
+def test_emos_fit_over_all_leads_matches_fitting_each_lead_alone():
+    # each lead is an independent problem, so fitting all leads at once must give
+    # the same predictive as fitting every lead on its own
+    n_leads = 12
+    y, pred = _leads_that_differ(n_leads, 2048, seed=3, noise_seed=4)
+    joint = EMOS()
+    joint.calibrate(y, pred)
+    mu, sigma = joint._calibrated_mean_std(pred)
+
+    for t in range(n_leads):
+        alone = EMOS()
+        alone.calibrate(y[:, t : t + 1], pred[:, t : t + 1])
+        mu_t, sigma_t = alone._calibrated_mean_std(pred[:, t : t + 1])
+        scale = y[:, t].std().item()
+        torch.testing.assert_close(mu[:, t : t + 1], mu_t, rtol=0, atol=1e-4 * scale)
+        torch.testing.assert_close(sigma[:, t : t + 1], sigma_t, rtol=1e-4, atol=0)
+
+
+def test_calibrate_keeps_a_constant_truth_group_sharp():
+    # a masked or dead cell carries no signal: its fitted predictive must stay
+    # sharp, not be inflated by a Newton step the conditioning crushed to zero
+    torch.manual_seed(0)
+    y = torch.randn(256, 1, 4, 1)
+    y[:, :, 2:] = 0.0
+    pred = y.unsqueeze(-1) + 0.5 * torch.randn(256, 1, 4, 1, 8)
+
+    emos = EMOS(per=(AxisRole.SPACE,))
+    emos.calibrate(y, pred)
+    _, sigma = emos._calibrated_mean_std(pred)
+
+    assert sigma[:, :, 2:].max() < 1e-4  # the constant cells
+    assert sigma[:, :, :2].min() > 1e-2  # the live ones are untouched
+
+
+def test_calibrate_does_not_amplify_a_collapsed_ensemble_group():
+    # every member equal at one lead leaves gamma1 unidentifiable there; it must
+    # not come back inflated when predicting on an ensemble that does spread
+    torch.manual_seed(0)
+    y = torch.randn(256, 2, 3, 1)
+    pred = y.unsqueeze(-1) + 0.5 * torch.randn(256, 2, 3, 1, 8)
+    pred[:, 1] = pred[:, 1, ..., :1].expand_as(pred[:, 1])
+
+    emos = EMOS()
+    emos.calibrate(y, pred)
+    spreading = y.unsqueeze(-1) + 0.5 * torch.randn(256, 2, 3, 1, 8)
+    _, sigma = emos._calibrated_mean_std(spreading)
+
+    assert sigma[:, 1].max() < 10 * sigma[:, 0].max()
+
+
+def test_calibrate_rejects_non_finite_inputs():
+    torch.manual_seed(0)
+    y = torch.randn(64, 2, 3, 1)
+    pred = y.unsqueeze(-1) + torch.randn(64, 2, 3, 1, 8)
+    pred[0, 0, 0, 0, 0] = float("nan")
+    with pytest.raises(ValueError, match="finite"):
+        EMOS().calibrate(y, pred)
+
+
+def test_calibrate_warns_when_groups_do_not_converge():
+    y, pred = _leads_that_differ(4, 512, seed=5, noise_seed=6)
+    with pytest.warns(RuntimeWarning, match="did not converge"):
+        EMOS(max_iter=1).calibrate(y, pred)
+
+
+def test_predict_and_sample_keep_the_forecast_dtype():
+    # coefficients are fitted in float64, but outputs follow the forecast's dtype
+    torch.manual_seed(0)
+    y_b = torch.randn(200, 2, 3, 1)
+    yp_b = torch.randn(200, 2, 3, 1, 8)
+    emos = EMOS()
+    emos.calibrate(y_b, yp_b)
+
+    assert emos.predict(yp_b, 0.10).dtype == torch.float32
+    assert emos.sample(yp_b, 4).dtype == torch.float32
+
+
+def test_group_crps_derivatives_match_autograd():
+    # the closed-form gradient and Hessian that drive the fit, against autograd;
+    # groups are independent, so the Hessian of the sum is block-diagonal
+    torch.manual_seed(0)
+    n_groups = 3
+    y = torch.randn(50, n_groups, 4, 2, dtype=torch.float64)
+    xbar = y + 0.5 * torch.randn_like(y)
+    s2 = torch.rand_like(y) + 0.1
+    objective = _GroupCRPS(y, xbar, s2, view=(1, -1, 1, 1), pooled=(0, 2, 3))
+    theta = torch.tensor(
+        [[0.1, -0.2, 0.3], [0.9, 1.1, 0.7], [0.2, 0.05, 0.4], [0.5, 1.5, 0.8]],
+        dtype=torch.float64,
+    )
+
+    losses, grad, hess = objective.derivatives(theta)
+
+    def total(t):
+        return objective(t).sum()
+
+    torch.testing.assert_close(losses, objective(theta))
+    torch.testing.assert_close(grad, torch.autograd.functional.jacobian(total, theta))
+    full = torch.autograd.functional.hessian(total, theta)  # (4, G, 4, G)
+    blocks = torch.stack([full[:, g, :, g] for g in range(n_groups)], dim=-1)
+    torch.testing.assert_close(hess, blocks)

@@ -202,7 +202,8 @@ def test_constructor_validates_risk_and_error_levels(alphas, deltas, match):
 
 def test_rcps_base_is_abstract():
     with pytest.raises(TypeError, match="abstract"):
-        RCPSCalibrator(alphas=0.1, deltas=0.05)
+        # Deliberately instantiate the abstract class to verify runtime rejection.
+        RCPSCalibrator(alphas=0.1, deltas=0.05)  # ty: ignore[call-non-callable]
 
 
 def test_ensemble_rcps_accepts_raw_ensemble_predictions():

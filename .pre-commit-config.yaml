@@ -13,7 +13,7 @@ repos:
     - id: ruff-format
       types_or: [ python, pyi ]
 - repo: https://github.com/astral-sh/ty-pre-commit
-  rev: v0.0.55
+  rev: v0.0.84
   hooks:
     - id: ty
 - repo: https://github.com/kynan/nbstripout

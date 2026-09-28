@@ -1,4 +1,6 @@
 import math
+from unittest.mock import patch
+from weakref import ref
 
 import pytest
 import torch
@@ -249,6 +251,124 @@ def test_ensemble_std_mode_uses_symmetric_population_scale():
     calibrator.calibrate(true, calibration_ensemble)
 
     assert calibrator.lambda_hat(alpha=0.1, delta=0.05) == pytest.approx(1.25)
+
+
+@pytest.mark.parametrize("mode", ["quantile", "std"])
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+@pytest.mark.parametrize("cache_statistics", [True, False])
+def test_ensemble_rcps_low_precision_constant_ensemble(mode, dtype, cache_statistics):
+    true = torch.ones(200, 1, dtype=dtype)
+    ensemble = torch.zeros(200, 1, 2, dtype=dtype)
+    calibrator = EnsembleRCPS(
+        alphas=0.1, deltas=0.05, mode=mode, cache_statistics=cache_statistics
+    )
+
+    calibrator.calibrate(true, ensemble)
+    intervals = calibrator.predict(ensemble[:1])
+
+    reference = EnsembleRCPS(alphas=0.1, deltas=0.05, mode=mode)
+    reference.calibrate(true.float(), ensemble.float())
+    assert calibrator.lambda_hats == reference.lambda_hats
+    assert intervals.dtype == torch.float32
+    torch.testing.assert_close(intervals, reference.predict(ensemble[:1].float()))
+    torch.testing.assert_close(intervals.flatten(), torch.tensor([-1.0, 1.0]))
+
+
+@pytest.mark.parametrize("cache_statistics", [True, False])
+def test_ensemble_rcps_quantile_cache_preserves_results(cache_statistics):
+    ensemble = torch.tensor([-1.0, 0.0, 1.0, 3.0]).expand(200, 2, 3, 1, 4)
+    true = torch.linspace(0.0, 3.0, 1_200).reshape(200, 2, 3, 1)
+    alphas = [0.1, 0.2]
+    deltas = [0.05, 0.2]
+    calibrator = EnsembleRCPS(
+        alphas=alphas, deltas=deltas, cache_statistics=cache_statistics
+    )
+
+    with patch("torch.quantile", wraps=torch.quantile) as quantile:
+        calibrator.calibrate(true, ensemble)
+        if cache_statistics:
+            assert quantile.call_count <= 2 * len(alphas)
+        else:
+            assert quantile.call_count > 2 * len(alphas)
+
+    with patch("torch.quantile", wraps=torch.quantile) as quantile:
+        intervals = calibrator.predict(ensemble[:2])
+        if cache_statistics:
+            assert quantile.call_count <= 2 * len(alphas)
+        else:
+            assert quantile.call_count > 2 * len(alphas)
+
+    # Compare against the same interval family built independently, including
+    # each alpha/delta output slice on a spatiotemporal tensor.
+    centre = ensemble.mean(dim=-1)
+    for index, alpha in enumerate(alphas):
+        lower = torch.quantile(ensemble, alpha / 2, dim=-1)
+        upper = torch.quantile(ensemble, 1 - alpha / 2, dim=-1)
+        widths = _uncertainty_prediction(centre, centre - lower, upper - centre)
+        reference = ScaledIntervalRCPS(alphas=alpha, deltas=deltas)
+        reference.calibrate(true, widths)
+        for delta in deltas:
+            assert calibrator.lambda_hat(alpha, delta) == reference.lambda_hat(
+                alpha, delta
+            )
+        torch.testing.assert_close(
+            intervals[..., index, :], reference.predict(widths[:2])[..., 0, :]
+        )
+
+
+def test_ensemble_rcps_releases_previous_alpha_statistics(monkeypatch):
+    ensemble = torch.tensor([-1.0, 0.0, 1.0, 3.0]).expand(200, 1, 4)
+    true = torch.full((200, 1), 1.25)
+    calibrator = EnsembleRCPS(alphas=[0.1, 0.2, 0.3], deltas=[0.05, 0.2])
+    compute_statistics = calibrator._ensemble_statistics
+    statistic_refs = {}
+
+    def track_statistics(pred, alpha):
+        statistics = compute_statistics(pred, alpha)
+        # Weak references verify that previous alphas' tensors can be released,
+        # without depending on the cache's container or retaining tensors here.
+        for previous_alpha, references in statistic_refs.items():
+            if previous_alpha != alpha:
+                assert all(reference() is None for reference in references)
+        statistic_refs[alpha] = [ref(tensor) for tensor in statistics]
+        return statistics
+
+    monkeypatch.setattr(calibrator, "_ensemble_statistics", track_statistics)
+    calibrator.calibrate(true, ensemble)
+    assert all(
+        reference() is None
+        for references in statistic_refs.values()
+        for reference in references
+    )
+    calibrator.predict(ensemble[:2])
+    assert all(
+        reference() is None
+        for references in statistic_refs.values()
+        for reference in references
+    )
+
+
+@pytest.mark.parametrize("mode", ["quantile", "std"])
+def test_ensemble_rcps_refreshes_statistics_between_calls(mode):
+    true = torch.full((200, 1), 1.25, dtype=torch.float64)
+    ensemble = torch.tensor([-1.0, 1.0], dtype=torch.float64).repeat(200, 1, 1)
+    calibrator = EnsembleRCPS(alphas=0.1, deltas=0.05, mode=mode)
+    calibrator.calibrate(true, ensemble)
+    first_scale = calibrator.lambda_hat(0.1, 0.05)
+
+    ensemble.mul_(2)
+    calibrator.calibrate(true, ensemble)
+    assert calibrator.lambda_hat(0.1, 0.05) == pytest.approx(
+        first_scale / 2, abs=calibrator.search_tolerance
+    )
+
+    prediction = ensemble[:2].clone()
+    intervals = calibrator.predict(prediction)
+    prediction.add_(10)
+    shifted_intervals = calibrator.predict(prediction)
+
+    assert shifted_intervals.dtype == torch.float64
+    torch.testing.assert_close(shifted_intervals, intervals + 10)
 
 
 def test_ensemble_rcps_requires_calibrated_member_count():

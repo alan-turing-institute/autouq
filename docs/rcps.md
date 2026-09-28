@@ -34,6 +34,9 @@ mean. `mode="std"` is also available when a symmetric
 mean-plus-or-minus-standard-deviation family is preferred. Both modes produce
 nested intervals as lambda increases.
 
+Float16 and bfloat16 ensembles are promoted to float32 for ensemble statistics
+and output intervals so the positive width floor remains representable.
+
 Calibration and prediction ensembles must use the same member count and
 generation procedure so that their losses remain exchangeable.
 
@@ -48,6 +51,64 @@ calibrator.calibrate(true_cal, ensemble_cal)
 
 intervals = calibrator.predict(ensemble_test)
 ```
+
+### Reusing ensemble statistics and memory cost
+
+For a fixed input ensemble and alpha, changing lambda only rescales the interval
+half-widths, and changing delta only changes the risk bound used to choose lambda.
+The ensemble statistics therefore stay constant throughout the scale search and
+across deltas. Recomputing the quantiles at every search step would repeatedly
+sort the same ensemble values.
+
+With the default `cache_statistics=True`, each `calibrate` or `predict` call
+temporarily caches these three tensors:
+
+- The ensemble mean (`centre`).
+- The lower half-width, `max(centre - lower_quantile, min_scale)`.
+- The upper half-width, `max(upper_quantile - centre, min_scale)`.
+
+Each tensor has shape `(batch, *optional_dims, channel)`: the ensemble member
+axis has been reduced. Both methods loop over alphas on the outside and deltas
+on the inside: they finish every delta for the current alpha before advancing.
+Quantile mode therefore keeps only the current alpha's tuple and releases it
+before computing the next alpha's statistics. In `mode="std"`, all alphas share
+one mean tensor and one clamped population-standard-deviation tensor; both
+widths refer to that same standard-deviation tensor.
+
+This trades extra peak memory for fewer reductions and sorts. If `N` is the
+number of elements after reducing the ensemble axis and `s` is the bytes per
+statistic element, the retained tensor data occupies `3 * N * s` bytes in
+quantile mode or `2 * N * s` in std mode, regardless of the alpha/delta grid size.
+Here `s=4` for float32, including promoted float16/bfloat16 inputs, and `s=8` for
+float64. For example, ten million elements require about 120 MB of quantile-cache
+tensor data in float32. These figures exclude input/output tensors, temporary
+quantile workspaces, and any autograd intermediates retained
+when prediction inputs require gradients. Large spatial grids can therefore
+make peak memory significant even with only one alpha cached. Output tensors
+still grow with the alpha/delta grid size.
+
+To disable the cache, set `cache_statistics=False`:
+
+```python
+calibrator = EnsembleRCPS(
+    alphas=[0.1, 0.2],
+    deltas=[0.05, 0.1],
+    cache_statistics=False,
+)
+```
+
+This recomputes the mean and widths for every interval evaluation, including
+each search step and delta, and releases the statistics after constructing the
+interval. It removes the cache's retained tensors at the cost of repeated work;
+it does not stream the dataset or remove the memory required for inputs, outputs,
+temporary statistics, or quantile computation, so peak memory may still be high.
+
+The calibrator drops its cache references in a `finally` block when the call
+returns or raises, so later calls recompute statistics from their current inputs.
+Since this temporary state is stored on the instance, calls on the same
+calibrator must be serialized. RCPS also retains detached calibration targets
+and raw predictions between calls to support `risk_upper_bound`; that storage
+outlives the temporary statistics cache.
 
 ## Predicted uncertainty half-widths
 

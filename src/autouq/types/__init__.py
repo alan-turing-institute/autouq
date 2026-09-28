@@ -17,13 +17,16 @@ Tensor = torch.Tensor
 #   generic conformal score structure.
 # - W: exactly one width dim
 # - H: exactly one height dim
-# - D: exactly one depth dim
+# - D: exactly one depth dim, or the RCPS delta axis when following A
 # - M: exactly one model dim (e.g. for ensembles)
 # - I: Interval dimension (currently set as size 2)
 # - A: Alphas channel for different miscoverage levels
 # - Q: Lower/upper quantile axis (currently set as size 2)
 # - K: CQR index over configured quantile-level pairs
+# - U: RCPS scale-family components
+#      (centre, lower half-width, upper half-width; size 3)
 
+TensorB = Float[Tensor, "batch"]
 TensorC = Float[Tensor, "channel"]  # Vector of scalars
 TensorBC = Float[Tensor, "batch channel"]  # Only batch and channel
 TensorBN = Float[Tensor, "batch *score_dims"]  # Scores with calibration batch
@@ -32,6 +35,7 @@ TensorBNC = Float[Tensor, "batch *optional_dims channel"]
 TensorBNCA = Float[Tensor, "batch *optional_dims channel alphas"]
 TensorBNCM = Float[Tensor, "batch *optional_dims channel ensemble"]  # ensemble
 TensorBNCK = Float[Tensor, "batch *optional_dims channel quantile_pairs"]
+TensorBNCU = Float[Tensor, "batch *optional_dims channel 3"]
 TensorBTNC = Float[Tensor, "batch time *optional_dims channel"]
 TensorBSC = Float[Tensor, "batch spatial *spatial channel"]
 TensorBLC = Float[Tensor, "batch latent *latent channel"]
@@ -58,6 +62,10 @@ TensorBTCHW = Float[Tensor, "batch time channel height width"]  # Specific spati
 TensorBTC = Float[Tensor, "batch time channel"]
 
 TensorBNIA = Float[Tensor, "batch *optional_dims channel 2 alphas"]  # intervals
+TensorBNI = Float[Tensor, "batch *optional_dims channel 2"]  # one interval
+TensorBNIAD = Float[
+    Tensor, "batch *optional_dims channel 2 alphas deltas"
+]  # RCPS intervals
 
 ArrayLike = Tensor | np.ndarray
 

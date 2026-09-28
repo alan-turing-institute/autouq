@@ -75,6 +75,10 @@ This class does not implement EnbPI. EnbPI is a related ensemble conformal metho
 for time series that uses bootstrap ensemble predictors and avoids the standard
 exchangeability requirement.
 
+For an alternative that controls expected coverage loss with a user-specified
+failure probability over the calibration-set draw, see
+[`EnsembleRCPS`](rcps.md#rcps-and-conformal-ensemble-approaches).
+
 ## References
 
 - Lei, G'Sell, Rinaldo, Tibshirani, and Wasserman (2018),
